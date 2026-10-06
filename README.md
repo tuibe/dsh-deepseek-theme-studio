@@ -395,3 +395,48 @@ window.dshThemeStudio.formatSelfCheck()
 
 `verify-tokens.mjs` 刻意比参考实现更严格：抓不到宿主 CSS 或运行实例时**非零退出**，
 不会像 `mux9056-bot/dsh-theme` 的 `verify:live` 那样在抓取失败后仍然打印"校验通过"。
+
+
+---
+
+## 发布（维护者）
+
+发布不需要任何 token、不需要验证码。npm 侧的凭据是通过 **trusted publishing（OIDC）** 建立的：
+`.github/workflows/publish.yml` 用一次性的、限定到本工作流的 OIDC 令牌换发布权，所以没有长期凭据可泄露、也没有东西需要轮换。
+
+流程就三步：
+
+```powershell
+# 1. 改版本号（构建会把版本号注入 lib/client.js，所以必须重新构建）
+node -e "const f='package.json',p=require('./'+f);p.version='0.1.2';require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
+node scripts/build.mjs
+
+# 2. 提交
+git add -A; git commit -m "Release 0.1.2"
+
+# 3. 打附注 tag 并推送（工作流由 tag 触发）
+git tag -a v0.1.2 -m "v0.1.2"
+git push origin main; git push origin v0.1.2
+```
+
+然后工作流会自动：校验 bundle 与 `src/` 同步 → 工厂冒烟测试 → 校验 tag 与 `package.json` 版本一致 → 发布并生成 SLSA provenance。
+
+**两个容易踩的坑**（都实际踩过）：
+
+- **必须重新构建再提交。** `scripts/build.mjs` 会把版本号写进 bundle（头部注释和 `createPluginBody({ version })`），只改 `package.json` 不动 bundle 会导致工作流第一步就失败 —— 这是门禁在起作用，不是 bug。
+- **必须用附注 tag（`git tag -a`），且显式推送 tag。** 轻量 tag 配 `git push --follow-tags` **不会**被推上去，工作流根本不会触发。
+
+### 首次发布为什么更麻烦
+
+新包没有包设置页，所以配不了 trusted publisher —— 得先有一次带 2FA 的发布把包建出来。当时用的是
+`npm stage publish` + 网页批准（分阶段发布对尚未存在的包会先发一个 `0.0.0-stage` 占位版本）。
+包一旦存在，就可以用下面这条命令配置 trusted publisher：
+
+```sh
+npm trust github <package> --file publish.yml --repository <owner>/<repo> --allow-publish -y
+```
+
+这条命令需要交互式 2FA：它会在浏览器里打开验证页（用安全密钥也行），**必须在真实终端里跑** ——
+管道或后台任务里没有 TTY，npm 会直接抛 `EOTP` 而不打开浏览器。
+
+配置好后用 `npm trust list <package>` 查看（同样需要 2FA）。
