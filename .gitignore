@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# build output is committed on purpose: lib/client.js is the shipped browser
+# bundle, and lib/index.js is hand-written. Do not ignore lib/.
+
+# editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# local verification artefacts
+_run/
+shots/
+*.local.json

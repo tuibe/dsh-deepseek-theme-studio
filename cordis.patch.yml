@@ -1,0 +1,14 @@
+# dsh-deepseek-theme-studio bundle patch.
+#
+# DSH client plugins have no auto-discovery: dropping the package into a
+# profile's node_modules is not enough. This `dsh.bundle.patch` layer is what
+# puts the package into the profile's composition, and only then does the
+# client-modules loader collect its ./client bundle into the boot manifest.
+#
+# Format copied verbatim from the working plugins on this host
+# (mux9056-bot/dsh-theme, ycqaq233/dsh-unknown-theme,
+#  JohnnyTing/dsh-official-homepage-theme, oil-oil/dsh-theme) and from the
+# profile's own cordis.patch.yml.
+- insert:
+    - id: deepseek-theme-studio
+      name: 'dsh-deepseek-theme-studio'

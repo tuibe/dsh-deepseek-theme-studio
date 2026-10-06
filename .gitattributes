@@ -1,0 +1,17 @@
+# Normalise line endings in the repository, not in the working tree.
+#
+# Without this, a Windows checkout rewrites every file it touches (see the
+# "LF will be replaced by CRLF" warnings) and turns any small edit into a
+# whole-file diff.
+* text=auto eol=lf
+
+# Windows-only helpers keep CRLF so they stay double-clickable.
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary artefacts must never be line-ending converted.
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
