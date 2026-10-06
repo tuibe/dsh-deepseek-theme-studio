@@ -42,6 +42,14 @@ const DEFAULT_HOSTS = [
   join(process.env.HOME ?? process.env.USERPROFILE ?? '', '.dsh/host/node_modules/@deepseek-ai'),
 ]
 
+/** Stock-install archives, tried when no unpacked host tree is present. */
+const DEFAULT_ASARS = [
+  join(process.env.LOCALAPPDATA ?? '', 'Programs/DeepSeek Harness/resources/app.asar'),
+  join(process.env.PROGRAMFILES ?? '', 'DeepSeek Harness/resources/app.asar'),
+  '/Applications/DeepSeek Harness.app/Contents/Resources/app.asar',
+  join(process.env.HOME ?? '', 'Applications/DeepSeek Harness.app/Contents/Resources/app.asar'),
+]
+
 const hostDir = argValue('--host')
 const liveUrl = argValue('--live')
 const liveCookie = argValue('--cookie')
@@ -88,6 +96,55 @@ function scanHostTree(dir) {
       } catch { /* unreadable file: skip */ }
     }
   }
+  return { found, files }
+}
+
+/**
+ * Read a file out of an asar archive.
+ *
+ * asar layout: a 16-byte pickle header, then a JSON directory, then the file
+ * contents. Offsets in the directory are relative to the end of the header
+ * pickle, which is what makes this readable without extracting anything.
+ */
+function readAsarEntry(buffer, baseOffset, entry) {
+  const start = baseOffset + Number(entry.offset)
+  return buffer.subarray(start, start + entry.size).toString('utf8')
+}
+
+function readAsarDirectory(buffer) {
+  const headerPickleSize = buffer.readUInt32LE(4)
+  const jsonLength = buffer.readUInt32LE(12)
+  const json = buffer.subarray(16, 16 + jsonLength).toString('utf8')
+  return { directory: JSON.parse(json), baseOffset: 8 + headerPickleSize }
+}
+
+/**
+ * Scan the host's own CSS/JS for token declarations directly inside app.asar.
+ * Only files that mention one of the token prefixes are decoded, so this stays
+ * fast on a ~100 MB archive.
+ */
+function scanAsar(archivePath) {
+  const buffer = readFileSync(archivePath)
+  const { directory, baseOffset } = readAsarDirectory(buffer)
+  const found = new Set()
+  let files = 0
+
+  const walk = (node) => {
+    for (const [name, entry] of Object.entries(node.files ?? {})) {
+      if (entry.files !== undefined) { walk(entry); continue }
+      if (typeof entry.offset !== 'string') continue
+      if (!/\.(js|css|mjs)$/i.test(name)) continue
+      if (entry.size > 12_000_000) continue
+      let text
+      try {
+        text = readAsarEntry(buffer, baseOffset, entry)
+      } catch { continue }
+      if (!text.includes('--dsw-') && !text.includes('--dsh-') && !text.includes('--shiki-')) continue
+      files += 1
+      collectDeclared(text, found)
+    }
+  }
+  walk(directory)
   return { found, files }
 }
 
@@ -143,15 +200,28 @@ if (liveUrl !== undefined) {
   })
 } else {
   const dir = hostDir ?? DEFAULT_HOSTS.find((candidate) => candidate !== '' && existsSync(candidate))
-  if (dir === undefined) {
-    console.error('✘ no host tree found. Pass --host <extracted asar node_modules/@deepseek-ai> or --live <url>.')
+  const asar = hostDir === undefined
+    ? DEFAULT_ASARS.find((candidate) => candidate !== '' && existsSync(candidate))
+    : undefined
+  if (dir === undefined && asar === undefined) {
+    console.error('✘ no host tree and no app.asar found. Pass --host <extracted node_modules/@deepseek-ai>,')
+    console.error('  --live <url>, or point DSH_HOME at a stock install.')
     process.exit(2)
   }
-  mode = `host tree ${dir}`
-  source = scanHostTree(dir)
-  if (source.files === 0) {
-    console.error(`✘ scanned 0 CSS-bearing files under ${dir} — wrong path?`)
-    process.exit(2)
+  if (dir !== undefined) {
+    mode = `host tree ${dir}`
+    source = scanHostTree(dir)
+    if (source.files === 0) {
+      console.error(`✘ scanned 0 CSS-bearing files under ${dir} — wrong path?`)
+      process.exit(2)
+    }
+  } else {
+    mode = `app.asar ${asar}`
+    source = scanAsar(asar)
+    if (source.files === 0) {
+      console.error(`✘ scanned 0 CSS-bearing entries inside ${asar} — archive layout changed?`)
+      process.exit(2)
+    }
   }
 }
 
