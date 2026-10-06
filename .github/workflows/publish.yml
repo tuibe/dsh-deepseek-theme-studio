@@ -1,0 +1,60 @@
+# Publish to npm via trusted publishing (OIDC).
+#
+# There is no NPM_TOKEN secret anywhere in this workflow. Instead it exchanges a
+# short-lived, workflow-scoped OIDC token for publish rights — which is why the
+# trusted publisher has to be configured on the package's npm settings page
+# first, and why the three fields there (owner, repository, workflow filename)
+# must match this file exactly. A mismatch fails the publish with ENEEDAUTH; it
+# does not silently fall back to anything.
+#
+# This replaces the token route entirely: nothing to rotate, nothing to leak,
+# and no interactive 2FA prompt per release.
+name: Publish to npm
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  id-token: write # required for OIDC: without it the token exchange cannot happen
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false # never cache in a release build
+
+      # This package has no dependencies, so there is nothing to `npm ci`.
+      # The release gate is instead that the committed bundle still matches
+      # src/ and that the factory materialises — i.e. what ships is what was
+      # reviewed, not whatever happened to be lying in the working tree.
+      - name: Bundle is in sync with src/
+        run: node scripts/build.mjs --check
+
+      - name: Factory smoke test
+        run: node scripts/smoke-factory.mjs
+
+      - name: Tag must match package.json version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          pkg="$(node -p "require('./package.json').version")"
+          tag="${GITHUB_REF_NAME#v}"
+          echo "package.json version = $pkg"
+          echo "tag                  = $tag"
+          if [ "$pkg" != "$tag" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $pkg"
+            exit 1
+          fi
+
+      # Provenance is generated automatically for trusted publishing; no flag.
+      - name: Publish
+        run: npm publish --access public
