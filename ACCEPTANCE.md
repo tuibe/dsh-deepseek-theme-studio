@@ -1,5 +1,8 @@
 # 验收证据（阶段 5，逐条对应）
 
+> 版本说明：§1–§10 是 **0.1.0 / 宿主 0.2.0-rc.2** 的历史实测证据，原样保留；
+> 0.1.4 在 **0.2.1-rc.2** 上的复验、点击安全修复与 Codex 审查记录见 **§11**。
+
 - 插件：`dsh-deepseek-theme-studio` v0.1.0
 - 宿主：**DSH 0.2.0-rc.2**（`dsh --version`）
 - profile：`C:\Users\草木\.dsh\profiles\web` → 服务 `http://127.0.0.1:19399/`
@@ -313,3 +316,72 @@ bundles contains plugin: False
 4. **流体 shader 的降级路径已实测**（早期一次运行命中 `static-gradient` 降级，页面无白屏、无报错），
    但**没有**在真实"无 WebGL2"环境（禁用 GPU 的浏览器）下复测。
 5. **`--live` 令牌复检**在已登录实例上需要手工提供 cookie，本轮以页面内 `formatSelfCheck()` 作为运行期复检。
+
+---
+
+## 11. 0.2.1-rc.2 复验 + 点击稳定性（0.1.4）
+
+**环境**：宿主 **DSH 0.2.1-rc.2**；隔离测试 profile
+`C:\DSH1\_testhome\profiles\test`（`DSH_HOME=C:\DSH1\_testhome`，不碰用户的 desktop/web profile）；
+浏览器视口 1384×797；插件以本地 `link:` 安装；`theme-studio.json` 为空，即出厂默认蓝白主题。
+
+### 11.1 兼容
+
+| 观测 | 结果 |
+|---|---|
+| `dsh --version`（内层 `bin.js`） | `0.2.1-rc.2` |
+| boot manifest 含本插件 | `dsh-deepseek-theme-studio` ✔ |
+| 设置行 | 出现在「通用设置」，100 项参数可用 ✔ |
+| `window.dshThemeStudio.selfCheck()` | `ok: true`，tokens **22/22**，6 个 DOM 钩子全 ok ✔ |
+| `node scripts/verify-tokens.mjs`（扫 0.2.1 `app.asar`） | 68 个文件、宿主已声明 **465** 个令牌，本插件 22 个全部命中，exit 0 ✔ |
+| `package.json` `dsh.compatibility.dshReleases` | 同时声明 `0.2.0-rc.2` 与 `0.2.1-rc.2` ✔ |
+| `package.json` / bundle 版本 | `0.1.4` ✔ |
+
+### 11.2 点击安全（修复前后对比）
+
+同一个宿主开关（36×20 px，`[role="switch"]`）：
+
+| 观测 | 0.1.3 修复前 | 0.1.4 修复后 |
+|---|---|---|
+| hover 计算样式 `transform` | `matrix(1.045, 0, 0, 1.045, 0, -5)` | `none` |
+| hover 时 `transform-origin` | 被插件改成 `center` | 保持宿主值 `18px 10px` |
+| 鼠标放在底边（rect `x=1027,y=647,w=36,h=20`，点击 `(1045,666)`，距底边 1px） | 元素抬起 5px，指针可能脱离 hover；边缘点击会抖 | 点击命中并切换；点击前后 rect 完全一致 `1027,647,36,20`；`transform: none`，`hover: true` |
+| 设置面板入场 keyframes | `opacity + translateY(6px) scale(0.994)` | `0% { opacity: 0 } / 100% { opacity: 1 }`，计算 `transform: none` |
+| 打开设置页时 `[role="dialog"]` 的 transform | 200ms 内位移 + 缩放 | 全程 `none` |
+| 设置分组「量子化」手动展开后，切换组内 Q1 开关 | `<details open>` 被 React 重渲染改写，组会在指针下收起 | `open` 保持 `true`，组高度不变（960px），只有滚动位置随点击变化 |
+| 设置页 21 个被标记目标 | 开关/按钮全部带 `dts-hover-target`，hover 位移 | **21 个 stable，0 个 motion**；诊断 `clickSafe:true, stableTargets:21, motionTargets:0` |
+| 主页面 12 个被标记目标 | 按钮 hover 位移 | **12 个 stable，0 个 motion** |
+| 纯装饰卡片（注入 `<div class="_card">` 验证） | 会被标记后位移 | 分类为 `dts-motion-target`，装饰上浮路径仍在 ✔ |
+
+**结论**：默认 `motion.clickSafe = true` 时，开关/按钮/可点击行/输入卡在 hover、按压、active 下都不改变几何属性；
+只有“本身不可点、且不含可交互后代”的纯装饰卡片保留上浮/缩放。把 `motion.clickSafe` 关掉可回到旧行为。
+
+### 11.3 性能
+
+修复后同一实例、设置页打开、流体 + 毛玻璃 + 鲸鱼水印默认开启，180 帧采样：
+
+```
+平均帧间隔 16.64 ms（≈60 fps）
+p95          16.8 ms
+最大         17.2 ms
+> 20 ms 帧   0
+long task     0
+```
+
+交互层没有新增 MutationObserver、没有新增 pointermove 监听；分类复用宿主每帧已有的 `mark()`，
+点击目标 Set 每次 `mark()` 只构建一次，候选的“祖先是否可点击”用缓存 Set 向上走并在 scope 处停止。
+
+### 11.4 GPT / Codex 协作记录
+
+用本机 Codex CLI（`codex-cli 0.163.0-alpha.10.2`，模型 `gpt-6.1-sol`）对最终 diff 做只读审查。
+Codex 报告了 4 点，Lead 逐条处理：
+
+1. `markPanels()` 漏删 `dts-focus-target` → 已补删（并统一清理四个插件类）。
+2. `.dts-hover-target` 无条件写 `transform-origin: center`，稳定目标仍被改几何相关样式 → 已把
+   `transform-origin` 只放到 `.dts-motion-target`；实测稳定开关保持宿主 `18px 10px`。
+3. 候选逐个 `closest()` 的最坏复杂度 → 改为用已缓存的 `clickSet` 向上走，命中即停，到 scope 终止。
+4. 指出 `src/settings-row.js` 超出 Codex 的 brief 硬范围 → 该文件由 Lead 负责（本任务明确要求修复
+   “设置组在指针下收起”），因此保留，并在本文件 11.2 给出实测证据。
+
+Codex 的两条验证命令（`node --check src/effects/interaction.js`、`git diff --check`）均通过；
+最终构建、冒烟和运行期复验由 Lead 在本机完成。

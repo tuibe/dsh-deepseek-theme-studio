@@ -176,6 +176,32 @@ function control(h, key, def, value, onChange, zh) {
  */
 export function createSettingsRow(React, controller) {
   const h = React.createElement
+
+  /**
+   * One collapsible parameter group.
+   *
+   * The group is deliberately UNCONTROLLED by the parameter table: the shipped
+   * version re-derived `open` from the group's enable flag on every render, so
+   * toggling any control re-rendered the row, forced the flag's value back onto
+   * `<details>` and collapsed a group the user had just opened — directly under
+   * the pointer. The local `open` state only changes on a real user toggle;
+   * parameter updates never move the group.
+   */
+  function ParamGroup(props) {
+    const { groupId, title, keys, values, defaultOpen, onChange, zh } = props
+    const [open, setOpen] = React.useState(defaultOpen)
+    return h('details', {
+      className: 'dts-group',
+      'data-dts-group': groupId,
+      open,
+      onToggle: (event) => setOpen(event.currentTarget.open),
+    },
+      h('summary', null, title),
+      h('div', { className: 'dts-grid' },
+        keys.map((key) => control(h, key, PARAM_DEFS[key], values[key], onChange, zh))),
+    )
+  }
+
   return function ThemeStudioRow() {
     const [snap, setSnap] = React.useState(controller.getSnapshot())
     const [importText, setImportText] = React.useState('')
@@ -199,11 +225,16 @@ export function createSettingsRow(React, controller) {
       const keys = Object.keys(PARAM_DEFS).filter((key) => PARAM_DEFS[key].group === group.id)
       if (keys.length === 0) return null
       const enabledKey = keys.find((key) => PARAM_DEFS[key].type === 'boolean' && key.endsWith('Enabled'))
-      const open = enabledKey === undefined ? true : values[enabledKey] === true
-      return h('details', { className: 'dts-group', key: group.id, open },
-        h('summary', null, `${zh ? group.zh : group.en} · ${keys.length}`),
-        h('div', { className: 'dts-grid' }, keys.map((key) => control(h, key, PARAM_DEFS[key], values[key], onChange, zh))),
-      )
+      return h(ParamGroup, {
+        key: group.id,
+        groupId: group.id,
+        title: `${zh ? group.zh : group.en} · ${keys.length}`,
+        keys,
+        values,
+        defaultOpen: enabledKey === undefined ? true : values[enabledKey] === true,
+        onChange,
+        zh,
+      })
     })
 
     return h('section', { className: 'dts-settings', 'data-dts-settings': '' },

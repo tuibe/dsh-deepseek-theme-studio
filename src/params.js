@@ -425,6 +425,14 @@ export const PARAM_DEFS = {
     type: 'boolean', group: 'motion', default: true,
     zh: '悬停弹起放大', en: 'Hover lift & scale',
   },
+  // Click targets (switches, buttons, rows, the composer) must never change
+  // geometry: a 5 px lift on a 20 px switch moves the button out from under the
+  // cursor, which both looks like jitter and makes edge clicks unreliable.
+  // Decorative cards keep the lift; this switch is the escape hatch.
+  'motion.clickSafe': {
+    type: 'boolean', group: 'motion', default: true,
+    zh: '点击目标不位移（点击安全）', en: 'Keep click targets still',
+  },
   'motion.hoverLift': {
     type: 'number', group: 'motion', default: 5, min: 0, max: 14, step: 0.5, unit: 'px',
     zh: '悬停上浮距离', en: 'Hover lift',

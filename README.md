@@ -3,9 +3,10 @@
 DeepSeek 官网视觉语言的 **DSH Web 客户端主题插件**：毛玻璃 / 液化（流体）/ 量子化（Q1–Q4）三类效果，
 全部参数可调、可持久化、可程序化调用。
 
-- 宿主实测版本：**0.2.0-rc.2**
+- 宿主实测版本：**0.2.1-rc.2**（同时兼容 **0.2.0-rc.2**；`dsh.compatibility.dshReleases` 两个版本都已声明）
 - 目标 profile：**web**（`$env:USERPROFILE\.dsh\profiles\web`）
-- 安装后外观与 DSH 原生**完全一致**，直到你在设置里显式启用效果。
+- 出厂默认是**蓝白官网主题**（流体背景 + 毛玻璃 + 鲸鱼水印）；点预设里的 **「原生」** 立即回到
+  DSH 原生外观，关闭全部效果后不写任何令牌、不挂任何 canvas。
 - 复用与许可台账见 [`REUSE.md`](REUSE.md)，第三方许可见 [`LICENSES/`](LICENSES/NOTICE.md)。
 
 ---
@@ -24,7 +25,7 @@ DeepSeek 官网视觉语言的 **DSH Web 客户端主题插件**：毛玻璃 / �
 | `scripts/verify-tokens.mjs` | 令牌漂移自检（失败**非零退出**）|
 | `scripts/png-diff.mjs` | 纯 Node PNG 双图差异报告（含 `--dump-region diff`）|
 | `REUSE.md` | 复用与许可台账（Phase 0 闸门产物：逐行来源与许可判定）|
-| `ACCEPTANCE.md` | 9 项验收的实测证据 |
+| `ACCEPTANCE.md` | 验收实测证据（含 0.2.1-rc.2 复验与点击安全，§11）|
 | `icon.svg`, `LICENSE`, `LICENSES/` | 图标 / 许可证 / 第三方声明 |
 
 ---
@@ -294,14 +295,37 @@ window.dshThemeStudio.formatSelfCheck()
 | 设置项 | 键 | 范围 / 步长 | 默认 |
 |---|---|---|---|
 | 标题聚光灯 | `spotlight.enabled` | 开关 | 关 |
-| 光斑直径 / 颜色 | `spotlight.size` / `spotlight.color` | 16–200 px / HEX | 64 / `#ffffff` |
+| 光斑直径 / 颜色 | `spotlight.size` / `spotlight.color` | 16–200 px / HEX | 50 / `#ffffff` |
 | 触发元素选择器 | `spotlight.selector` | 文本 | 见下 |
 | 动画总开关 | `motion.enabled` | 开关 | 开 |
 | 统一时长 | `motion.duration` | 80–400 ms，步长 10 | 160 |
 | 缓动曲线 | `motion.easing` | 4 条（均无过冲）| `cubic-bezier(0.2, 0, 0, 1)` |
+| 悬停弹起放大 | `motion.hoverEnabled` | 开关 | 开 |
+| 悬停上浮 / 放大 | `motion.hoverLift` / `motion.hoverScale` | 0–14 px / 1.00–1.16× | 5 px / 1.045× |
+| 按压下沉 | `motion.pressScale` | 0.90–1.00× | 0.985× |
+| 面板入场时长 | `motion.panelEnter` | 0–400 ms，步长 10 | 200 |
+| 输入卡聚焦放大 | `motion.composerScale` | 1.00–1.20× | 1.04× |
+| 面板打开时只动该面板 | `motion.scopeToDialog` | 开关 | 开 |
+| 悬停动画作用元素 | `motion.hoverTargets` | 文本（CSS 选择器）| 见 `src/params.js` |
+| 点击目标不位移（点击安全）| `motion.clickSafe` | 开关 | **开** |
 
 聚光灯默认触发选择器：`[data-conversation-header] h1, [data-conversation-header] h2, [class*="_headline"]`
 （只在标题文字/图标上触发，容器空白区不触发）。
+
+### 4.6 点击安全（`motion.clickSafe`）
+
+从 0.1.4 起默认开启。开启时：
+
+- 开关、按钮、可点击行、输入卡等**点击目标在 hover / 按压 / active 下不改变任何几何属性**
+  （没有 `translate`、`scale`、`z-index`），只保留颜色 / 边框 / 阴影 / 不透明度过渡。
+  鼠标对准哪个开关，那个开关就不会从指针下跑开，也不会再出现
+  “抬起 → 离开 hover → 落下 → 再抬起”的边缘抖动。
+- 纯装饰、且内部不含任何可交互元素的卡片仍保留悬停上浮/放大。
+- `[role="dialog"]` 等面板的入场动画改为**纯淡入**，不再有 6px 位移和 0.994 缩放；
+  打开设置页时控件在动画期间位置就是最终位置。
+- `prefers-reduced-motion: reduce` 下仍然没有位移和入场动画。
+
+把 `motion.clickSafe` 关掉即可回到旧的“所有悬停目标都上浮”的行为（供偏好旧观感的用户使用）。
 
 ---
 
@@ -396,6 +420,9 @@ window.dshThemeStudio.formatSelfCheck()
 `verify-tokens.mjs` 刻意比参考实现更严格：抓不到宿主 CSS 或运行实例时**非零退出**，
 不会像 `mux9056-bot/dsh-theme` 的 `verify:live` 那样在抓取失败后仍然打印"校验通过"。
 
+**0.2.1-rc.2 复验与点击安全实测**（含开关底边点击、面板入场 keyframes、设置组不收起、180 帧采样、
+Codex 审查记录）见 [`ACCEPTANCE.md` §11](ACCEPTANCE.md)。
+
 
 ---
 
@@ -408,15 +435,15 @@ window.dshThemeStudio.formatSelfCheck()
 
 ```powershell
 # 1. 改版本号（构建会把版本号注入 lib/client.js，所以必须重新构建）
-node -e "const f='package.json',p=require('./'+f);p.version='0.1.2';require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
+node -e "const f='package.json',p=require('./'+f);p.version='0.1.4';require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
 node scripts/build.mjs
 
 # 2. 提交
-git add -A; git commit -m "Release 0.1.2"
+git add -A; git commit -m "Release 0.1.4"
 
 # 3. 打附注 tag 并推送（工作流由 tag 触发）
-git tag -a v0.1.2 -m "v0.1.2"
-git push origin main; git push origin v0.1.2
+git tag -a v0.1.4 -m "v0.1.4"
+git push origin main; git push origin v0.1.4
 ```
 
 然后工作流会自动：校验 bundle 与 `src/` 同步 → 工厂冒烟测试 → 校验 tag 与 `package.json` 版本一致 → 发布并生成 SLSA provenance。
