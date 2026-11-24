@@ -241,7 +241,8 @@ export function createSettingsRow(React, controller) {
       h('div', { className: 'dts-head' },
         h('div', { className: 'dts-title' },
           h('span', null, zh ? 'DeepSeek 官网主题工作台' : 'DeepSeek official theme studio'),
-          h('span', { className: 'dts-sub' }, `${PARAM_NAMES.length} ${zh ? '项参数' : 'parameters'}`),
+          h('span', { className: 'dts-sub' },
+            `${controller.version ? `v${controller.version} · ` : ''}${PARAM_NAMES.length} ${zh ? '项参数' : 'parameters'}`),
         ),
         h('div', { className: 'dts-presets' },
           presets.map((preset) => h('button', {

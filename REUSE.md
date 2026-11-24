@@ -131,6 +131,8 @@
 | **参数模型 / 设置页控件 / JSON 配置通道的接线** | 任务 3.2/3.3 要求的参数集（含 5 色流体调色板、0–40px 模糊、24–160px 栅格、2–16 档量化、80–400ms 统一时长）在现成插件中**都不存在**：主复用源只有 4 个字段（enabled/fishEnabled/gridEnabled/intensity，`settings.js:1-6`），`dsh-dream-skin` 是皮肤预设而非参数。接线代码属于本项目原创 |
 | **令牌自检（build-time + runtime 双检）** | `mux9056` 的 `verify:live` 已被证实**抓取失败仍报通过**（`scripts/build.mjs:278-286`）→ 不能复用其实现。本项目改为：构建期用 `_research/host-token-inventory.mjs` 产出的真实令牌清单（0.2.0-rc.2 实测 **461** 个：`--dsw-*` 404 / `--dsh-*` 46 / `--shiki-*` 11）做白名单校验，运行期用 `getComputedStyle` + 官方 `ctx.theme.exportInspectTokens()` 复检，且**失败必须非零退出/报错** |
 | **选择器漂移自检** | 关键证据：`ycqaq233` 的 `.hHd-Xa_newSession`、`.nL4_yW_sessionLogButton` 在 0.2.0-rc.2 已失效，且 `_headlineText`/`_fishHitbox` 两个 key 在宿主机 51 个 client bundle 的 class-map 里**根本不存在**。现有插件无任何选择器漂移检测 → 本项目自建：把用到的每个宿主钩子登记成表，运行期报告每个钩子的命中数，并为 4 个玻璃槽位提供可覆盖选择器 |
+| **背景粒子层 `src/effects/ambient.js`**（0.2.0） | 遍历四个渠道后没有"全屏星尘 + 深度视差 + 指针推开 + 点击扩散环"的现成实现：`JohnnyTing` 的鱼群是矢量绘制的实体鱼，`ycqaq233` 的点云只做"聚成鲸鱼"这一件事，二者都不提供与内容无关的背景粒子。所用模型（环形边界回绕、深度值驱动视差与 alpha、静止即停的帧循环）是通用图形学写法，本文件为原创实现 |
+| **消息 / 页面入场**（0.2.0，`src/effects/interaction.js`） | 与既有的面板入场同一套时长与缓动变量；关键在"每条新气泡只播一次"——用 `WeakSet` 记录已见节点，首帧只 `prime` 不播放，避免打开会话时整屏一起闪 |
 
 ### 0.4.4 逐文件复用台账（出处 / 许可证 / 是否修改）
 
@@ -155,6 +157,8 @@
 | `cordis.patch.yml` | 四个仓库同构 | — | — | 照抄格式，替换 id/name |
 | `package.json` manifest | mux9056（Apache-2.0）+ JohnnyTing（MIT） | 上述 | — | 照抄字段，替换包名/版本/compatibility |
 | `scripts/verify-tokens.mjs` | 自研（思路参考 mux9056 `verify:live`） | — | — | 原创（含上游缺陷的修正：失败必须非零退出） |
+| `scripts/smoke-dom.mjs`（0.2.0） | 自研 | — | — | 原创：零依赖 DOM 桩（选择器匹配 / 假 2D context / 排队式 rAF），用于在 Node 里跑真实 bundle 并断言挂载与释放 |
+| `src/effects/ambient.js`（0.2.0） | 自研 | — | MIT | 原创，无上游移植 |
 | `icon.svg` | 自研（鲸鱼轮廓取自官方 FishLogo path 的公开几何，见 ycqaq233 `lib/client.js:150` 的 `FISH_PATH`） | — | MIT | 重新绘制为独立图标 |
 
 ### 0.4.5 许可证合规动作

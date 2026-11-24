@@ -81,6 +81,7 @@ export function createInteractionSources(options = {}) {
   let sources = [pointer, ...wanderers]
   let lastPointerAt = 0
   let lastTick = 0
+  let lastTickAdvance = 0
 
   const notify = () => {
     for (const fn of [...listeners]) {
@@ -155,6 +156,12 @@ export function createInteractionSources(options = {}) {
      */
     tick(dt) {
       if (reducedMotion || !visible) return
+      // Several layers (grid, particles, ambient) share one frame; advancing the
+      // wanderers more than once per frame would make them run at N times the
+      // configured speed.
+      const now = performance.now()
+      if (now - lastTickAdvance < 6) return
+      lastTickAdvance = now
       const step = Math.min(64, Math.max(1, dt)) / 1000
       lastTick += dt
       for (const wanderer of wanderers) {

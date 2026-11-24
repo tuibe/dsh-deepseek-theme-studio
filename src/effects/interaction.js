@@ -1,144 +1,188 @@
 /**
- * Interaction animation layer — 悬停弹起放大 / 按压下沉 / 面板入场.
+ * Element interaction layer — iOS 风格弹缩（悬停放大 / 按下缩小 / 松手回弹）.
  *
- * Two rules shape this file:
+ * What changed from 0.2.x and why:
  *
- *   1. A click target never changes geometry. A 5 px lift on a 20 px switch
- *      moves the control out from under the pointer: near the bottom edge the
- *      pointer leaves the element, the lift reverses, the pointer re-enters,
- *      and the result is a visible hover oscillation. The same translate also
- *      moves the mouseup target, so an edge click can miss. Click targets
- *      therefore only animate colour / background / border / shadow / opacity;
- *      `transform` stays `none` in every pointer state.
- *   2. Decorative surfaces may still lift, but only when they are neither
- *      clickable themselves nor contain anything clickable. The lift is an
- *      optional visual flourish, never part of the hit-testing path.
+ *   The old layer deliberately froze every click target (`transform: none`) to
+ *   kill a real defect: a 5 px `translateY` lift moved the element out from under
+ *   the pointer, the pointer left the box, the lift reversed, the pointer
+ *   re-entered — visible jitter at the bottom edge, and edge clicks could miss.
  *
- * The panel entrance is opacity-only for the same reason: a dialog that rises
- * 6 px while the user is already aiming at a switch makes the first click land
- * on a different control.
+ *   The fix is NOT "never move". It is "never move the HIT BOX out of the way":
  *
- * The host already animates `background-color` on most of these elements, and a
- * bare `transition: transform …` would *replace* that. So the transition list
- * restates the properties the host animates on controls, which keeps host
- * feedback intact without adding geometry.
+ *     - hover animates `scale()` around `transform-origin: center` only. Scaling
+ *       up expands the box outward, so a pointer inside the element stays inside
+ *       it — no enter/leave oscillation. `translateY` stays available but
+ *       defaults to 0 px, because a vertical shift is exactly the thing that
+ *       caused the jitter.
+ *     - press animates a smaller `scale()` (0.94 by default). Shrinking cannot
+ *       yank the element away either: `:active` is held until mouseup regardless
+ *       of where the pointer went.
+ *     - release unwinds through an overshooting bezier (`motion.spring`), which
+ *       is what makes it read as an Apple spring rather than a fade.
  *
- * PROVENANCE: no upstream implementation was used — the hover/active semantics
- * here are this project's own (see REUSE.md §0.4.3). The list of touchable
- * host elements is derived from the DOM hooks in src/host-hooks.js, not copied.
+ *   Text fields keep the old freeze (`motion.textSafe`): a scaled text box
+ *   rasterises its own caret and selection, so scaling it looks soft while you
+ *   type. That is a legibility decision, not a safety one.
+ *
+ * Layering rules:
+ *   - only the OUTERMOST matching element animates; nested matches are dropped so
+ *     a `<span>` inside a `<button>` cannot double the scale factor;
+ *   - large surfaces (the composer card, dialogs) get a much smaller factor and
+ *     stop scaling entirely while focused (`:focus-within`), so typing never
+ *     shifts the text under the caret.
+ *
+ * PROVENANCE: the spring model is CSS-only (a back-out cubic-bezier). No
+ * upstream implementation was used; see REUSE.md §0.4.3.
  */
 
 export const INTERACTION_CSS = `
-/* Every marked target keeps the host's colour feedback. No transform here:
-   only .dts-motion-target is allowed to move. */
-html[data-dts-interaction] :is(.dts-hover-target) {
-  transition:
-    background-color var(--dts-motion-duration, 160ms) var(--dts-motion-easing, cubic-bezier(0.2,0,0,1)),
-    border-color var(--dts-motion-duration, 160ms) var(--dts-motion-easing, cubic-bezier(0.2,0,0,1)),
-    color var(--dts-motion-duration, 160ms) var(--dts-motion-easing, cubic-bezier(0.2,0,0,1)),
-    opacity var(--dts-motion-duration, 160ms) var(--dts-motion-easing, cubic-bezier(0.2,0,0,1)),
-    box-shadow var(--dts-motion-duration, 160ms) var(--dts-motion-easing, cubic-bezier(0.2,0,0,1)) !important;
-}
-
-/* Decorative-only surfaces may move. They contain no click target, so moving
-   them cannot change what a click hits. */
-html[data-dts-interaction] :is(.dts-motion-target) {
+/* ── base transition ───────────────────────────────────────────────────── */
+html[data-dts-pop] :is(.dts-pop, .dts-pop-lg) {
   transform-origin: center;
   transition:
-    transform var(--dts-motion-duration, 160ms) var(--dts-motion-easing, cubic-bezier(0.2,0,0,1)),
+    transform var(--dts-pop-duration, 260ms) var(--dts-pop-easing, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    box-shadow var(--dts-pop-duration, 260ms) var(--dts-pop-easing, cubic-bezier(0.34, 1.56, 0.64, 1)),
     background-color var(--dts-motion-duration, 160ms) var(--dts-motion-easing, cubic-bezier(0.2,0,0,1)),
     border-color var(--dts-motion-duration, 160ms) var(--dts-motion-easing, cubic-bezier(0.2,0,0,1)),
     color var(--dts-motion-duration, 160ms) var(--dts-motion-easing, cubic-bezier(0.2,0,0,1)),
-    opacity var(--dts-motion-duration, 160ms) var(--dts-motion-easing, cubic-bezier(0.2,0,0,1)),
-    box-shadow var(--dts-motion-duration, 160ms) var(--dts-motion-easing, cubic-bezier(0.2,0,0,1)) !important;
-}
-html[data-dts-interaction] :is(.dts-motion-target):hover {
-  transform: translateY(calc(-1 * var(--dts-hover-lift, 5px))) scale(var(--dts-hover-scale, 1.045));
-}
-/* The dialogue box reads as "focus", not "click": a whole-card scale that is
-   deliberately larger than a small control's. It is only assigned to a
-   decorative composer (clickSafe off); under the default click-safe mode the
-   composer is a click target and never moves. */
-html[data-dts-interaction] :is(.dts-focus-target):hover {
-  transform: translateY(calc(-1 * var(--dts-hover-lift, 5px))) scale(var(--dts-composer-scale, 1.04));
-  z-index: 1;
-}
-html[data-dts-interaction] :is(.dts-motion-target):active {
-  transform: translateY(0) scale(var(--dts-press-scale, 0.985));
-}
-html[data-dts-interaction] :is(.dts-motion-target):disabled {
-  transform: none;
+    opacity var(--dts-motion-duration, 160ms) var(--dts-motion-easing, cubic-bezier(0.2,0,0,1));
 }
 
-/* Click targets: no geometry in any pointer state. !important is required
-   because host controls may carry their own hover transform with a stronger
-   selector; stabilising the hit box is the whole point of this rule. */
-html[data-dts-interaction] :is(.dts-stable-target),
-html[data-dts-interaction] :is(.dts-stable-target):hover,
-html[data-dts-interaction] :is(.dts-stable-target):active,
-html[data-dts-interaction] :is(.dts-stable-target):focus-visible {
+/* ── hover: scale only, never a vertical shift by default ─────────────────
+   !important is required: the host paints some cards with an inline
+   transform (compositor hints), and an inline declaration outranks any
+   stylesheet rule. Only the hover/active frames take priority, so the host's
+   resting transform is untouched. */
+html[data-dts-pop] .dts-pop:hover {
+  transform: translateY(calc(-1 * var(--dts-hover-lift, 0px))) scale(var(--dts-hover-scale, 1.035)) !important;
+  box-shadow: var(--dts-pop-shadow, 0 0 0 transparent);
+}
+
+/* ── press: shrink, then spring back on release ─────────────────────────── */
+html[data-dts-pop] .dts-pop:active {
+  transform: translateY(0) scale(var(--dts-press-scale, 0.94)) !important;
+  transition-duration: var(--dts-press-duration, 100ms);
+}
+html[data-dts-pop] .dts-pop:disabled,
+html[data-dts-pop] .dts-pop[aria-disabled="true"] {
   transform: none !important;
 }
 
-/* Panel / dialog entrance: a short fade, never longer than the spec's 240 ms
-   ceiling, and driven by the same duration token. Opacity does not move the
-   hit box, so a quick click during the entrance still lands where it was
-   aimed. */
+/* ── large surfaces (composer, message bubbles) ─────────────────────────── */
+html[data-dts-pop] .dts-pop-lg:hover {
+  transform: scale(var(--dts-large-scale, 1.03)) !important;
+  box-shadow: var(--dts-pop-shadow-lg, 0 0 0 transparent);
+}
+html[data-dts-pop] .dts-pop-lg:active {
+  transform: scale(calc(var(--dts-large-scale, 1.03) * 0.985)) !important;
+  transition-duration: var(--dts-press-duration, 100ms);
+}
+/* NOTE: there is deliberately NO :focus-within freeze here.
+   The composer is auto-focused the moment a session opens, so a
+   .dts-pop-lg:focus-within { transform: none !important } rule (same
+   specificity, same importance, later in the sheet) silently disabled the whole
+   card animation — that is exactly why the "对话框" appeared to have no motion.
+   Scaled text under transform is rendered subpixel by Chromium, so 1.03 stays
+   crisp; only the text FIELD itself keeps a hard freeze (see .dts-textsafe). */
+/* Belt and braces for the composer: its card can carry pointer-events: none
+   so clicks fall through to the text area, and a pointer-events: none element
+   never receives :hover. The seat around it always does, so the seat can drive
+   the card. */
+html[data-dts-pop] [data-composer-seat]:hover .dts-pop-lg,
+html[data-dts-pop] [class*="_composerSeat"]:hover .dts-pop-lg {
+  transform: scale(var(--dts-large-scale, 1.03)) !important;
+  box-shadow: var(--dts-pop-shadow-lg, 0 0 0 transparent);
+}
+
+/* ── text fields: keep the old freeze (caret + selection stay crisp) ────── */
+html[data-dts-pop] :is(.dts-textsafe),
+html[data-dts-pop] :is(.dts-textsafe):hover,
+html[data-dts-pop] :is(.dts-textsafe):active,
+html[data-dts-pop] :is(.dts-textsafe):focus,
+html[data-dts-pop] :is(.dts-textsafe):focus-within {
+  transform: none !important;
+}
+
+/* ── panel / bubble / page entrances (unchanged) ────────────────────────── */
 @keyframes dts-panel-enter {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
-html[data-dts-interaction] .dts-panel-enter {
+html[data-dts-pop] .dts-panel-enter {
   animation: dts-panel-enter var(--dts-panel-enter, 200ms) var(--dts-motion-easing, cubic-bezier(0.2,0,0,1)) both;
 }
+
+@keyframes dts-pop-in {
+  0%   { opacity: 0; transform: scale(0.94); }
+  60%  { opacity: 1; transform: scale(1.012); }
+  100% { opacity: 1; transform: none; }
+}
+/* New message bubbles pop in once, then the class is dropped. */
+html[data-dts-pop] .dts-bubble-in {
+  animation: dts-pop-in var(--dts-message-enter, 180ms) var(--dts-pop-easing, cubic-bezier(0.34, 1.56, 0.64, 1)) both;
+}
+
+@keyframes dts-page-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+html[data-dts-pop] .dts-page-in {
+  animation: dts-page-in var(--dts-page-enter, 240ms) var(--dts-motion-easing, cubic-bezier(0.2,0,0,1)) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  html[data-dts-interaction] :is(.dts-motion-target):hover,
-  html[data-dts-interaction] :is(.dts-motion-target):active { transform: none; }
-  html[data-dts-interaction] .dts-panel-enter { animation: none; }
+  html[data-dts-pop] :is(.dts-pop, .dts-pop-lg):hover,
+  html[data-dts-pop] :is(.dts-pop, .dts-pop-lg):active { transform: none !important; }
+  html[data-dts-pop] .dts-panel-enter,
+  html[data-dts-pop] .dts-bubble-in,
+  html[data-dts-pop] .dts-page-in { animation: none; }
 }
 `
 
-/** Never lift these: layout columns, scroll containers, overlays, our own DOM. */
+/** Never animate these: layout columns, scroll containers, overlays, our own DOM. */
 const NEVER_TARGETS = [
   '[class*="_frame"]',
   '[class*="_centerCol"]',
   '[class*="_sidebarCol"]',
   '[class*="_scrollBody"]',
   '[data-conversation-scroll]',
-  '[role="dialog"]',
   '[class^="dts-"]',
 ]
 
-/**
- * A target is clickable if it is, contains, or sits inside one of these. The
- * composer card is included explicitly because it is one large focus/click
- * surface whose children move with it.
- */
-const CLICK_TARGET_SELECTOR = [
-  'button',
-  'a[href]',
-  'input',
-  'select',
-  'textarea',
-  'summary',
-  'label',
-  '[role="button"]',
-  '[role="switch"]',
-  '[role="checkbox"]',
-  '[role="radio"]',
-  '[role="tab"]',
-  '[role="menuitem"]',
-  '[role="option"]',
-  '[role="treeitem"]',
-  '[role="combobox"]',
-  '[role="slider"]',
-  '[contenteditable=""]',
-  '[contenteditable="true"]',
+/** Large surfaces get the whisper-scale instead of the full pop. */
+const LARGE_SELECTOR = [
   '[data-composer-card]',
+  '[data-composer-seat]',
+  '[class*="_composerSeat"]',
+  // Message bubbles carry body text: 1.02 is the largest factor that still
+  // reads crisp, and it is visible enough to feel like the bubble answered.
+  '[class*="_bubble"]',
 ].join(', ')
 
-/** Cap how many elements get marked, so a huge list cannot cost a long task. */
-const MAX_TARGETS = 400
+/**
+ * Text entry keeps `transform: none`: a scaled text box rasterises its own caret
+ * and selection highlight, which reads as blur exactly while the user is typing.
+ */
+const TEXT_SAFE_SELECTOR = [
+  'input',
+  'textarea',
+  'select',
+  '[contenteditable=""]',
+  '[contenteditable="true"]',
+].join(', ')
+
+/**
+ * Cap how many elements get marked, so a pathological page cannot cost a long
+ * task.
+ *
+ * 400 was far too low: matches come back in DOCUMENT ORDER, the transcript and
+ * the sidebar come first, and the composer card sits at the very end of the
+ * DOM. On a long session the budget was exhausted long before reaching it, so
+ * the card — the element the user calls "对话框" — was never marked at all. That
+ * is why every other button animated while the composer stayed dead still.
+ */
+const MAX_TARGETS = 2000
 
 /**
  * Create the interaction layer.
@@ -152,8 +196,13 @@ export function createInteractionLayer(options) {
   let style = null
   let marked = []
   let scheduled = false
-  let stableCount = 0
-  let motionCount = 0
+  let popCount = 0
+  let largeCount = 0
+  let textSafeCount = 0
+  /** Bubbles already considered. The first pass primes it without animating. */
+  const seenBubbles = new WeakSet()
+  let bubblesPrimed = false
+  let pageEntered = false
 
   function ensureStyle() {
     if (style !== null) return style
@@ -165,86 +214,59 @@ export function createInteractionLayer(options) {
     return style
   }
 
+  const PLUGIN_CLASSES = ['dts-pop', 'dts-pop-lg', 'dts-textsafe']
+
   function clearClasses(el) {
-    el.classList.remove('dts-hover-target')
-    el.classList.remove('dts-focus-target')
-    el.classList.remove('dts-stable-target')
-    el.classList.remove('dts-motion-target')
+    for (const name of PLUGIN_CLASSES) el.classList.remove(name)
   }
 
   function unmark() {
     for (const el of marked) clearClasses(el)
     marked = []
-    stableCount = 0
-    motionCount = 0
+    popCount = 0
+    largeCount = 0
+    textSafeCount = 0
+  }
+
+  function matchesAny(el, list) {
+    for (const selector of list) {
+      try {
+        if (el.matches(selector)) return true
+      } catch { /* an invalid host selector must not stop the pass */ }
+    }
+    return false
   }
 
   /**
-   * Collect the interactive elements in this scope once, then derive the
-   * container set by walking their ancestors. This keeps classification O(n)
-   * in the number of click targets instead of running a deep query per marked
-   * element.
+   * Keep only the outermost match: a `<span>` inside a `<button>` that both match
+   * would otherwise multiply the scale factor (1.035² ≈ 1.07) and the inner one
+   * would animate independently of its parent.
    */
-  function classify(scope, candidates, clickSafe) {
-    const clickSet = new Set()
-    if (clickSafe) {
-      let found
-      try {
-        found = scope.querySelectorAll(CLICK_TARGET_SELECTOR)
-      } catch {
-        found = []
-      }
-      for (const el of found) clickSet.add(el)
-      // `[tabindex]` needs a value check: tabindex="-1" is not a pointer target.
-      for (const el of scope.querySelectorAll('[tabindex]')) {
-        if (el.tabIndex >= 0) clickSet.add(el)
-      }
-    }
-
-    const containsClick = new Set()
-    if (clickSet.size > 0) {
-      for (const el of clickSet) {
-        let parent = el.parentElement
-        while (parent !== null && parent !== scope && !containsClick.has(parent)) {
-          containsClick.add(parent)
-          parent = parent.parentElement
+  function outermost(elements) {
+    const kept = []
+    const keptSet = new Set()
+    for (const el of elements) {
+      let nested = false
+      let parent = el.parentElement
+      while (parent !== null) {
+        if (keptSet.has(parent)) {
+          nested = true
+          break
         }
+        parent = parent.parentElement
       }
+      if (nested) continue
+      kept.push(el)
+      keptSet.add(el)
     }
-
-    const unstable = new Set()
-    const stable = new Set()
-    for (const el of candidates) {
-      if (!clickSafe) {
-        unstable.add(el)
-        continue
-      }
-      let isStable = clickSet.has(el) || containsClick.has(el)
-      if (!isStable) {
-        // An inner decorative span inside a button/label is still part of the
-        // click surface; it must not lift on its own. Walk the cached Set
-        // instead of running closest() per candidate: the walk stops at the
-        // first interactive ancestor and never leaves the current scope.
-        let parent = el.parentElement
-        while (parent !== null && parent !== scope) {
-          if (clickSet.has(parent)) {
-            isStable = true
-            break
-          }
-          parent = parent.parentElement
-        }
-      }
-      if (isStable) stable.add(el)
-      else unstable.add(el)
-    }
-    return { stable, unstable }
+    return kept
   }
 
-  /** Mark the current hover targets (idempotent; re-runs on DOM changes). */
+  /** Mark the current pop targets (idempotent; re-runs on DOM changes). */
   function mark() {
     scheduled = false
     const config = readConfig()
-    if (config['motion.hoverEnabled'] !== true || config['motion.enabled'] !== true) {
+    if (config['motion.enabled'] !== true || config['motion.hoverEnabled'] !== true) {
       unmark()
       return
     }
@@ -254,8 +276,7 @@ export function createInteractionLayer(options) {
       return
     }
     // With motion.scopeToDialog on and a panel open, only the panel's own
-    // controls animate: the page behind a modal must stay still, otherwise the
-    // whole plane appears to react while the user is working inside a panel.
+    // controls animate: the page behind a modal must stay still.
     const scope = config['motion.scopeToDialog'] === true
       ? (doc.querySelector('[role="dialog"]') ?? doc)
       : doc
@@ -266,39 +287,51 @@ export function createInteractionLayer(options) {
       unmark()
       return
     }
-    found = found.filter((el) => !NEVER_TARGETS.some((bad) => {
-      try {
-        return el.matches(bad)
-      } catch {
-        return false
-      }
-    })).slice(0, MAX_TARGETS)
-
-    const clickSafe = config['motion.clickSafe'] !== false
-    const { stable, unstable } = classify(scope, found, clickSafe)
+    found = found
+      .filter((el) => !matchesAny(el, NEVER_TARGETS))
+      .slice(0, MAX_TARGETS)
+    found = outermost(found)
 
     // Drop marks that no longer match (elements removed or re-rendered).
     const foundSet = new Set(found)
     for (const el of marked) {
       if (!foundSet.has(el) || !el.isConnected) clearClasses(el)
     }
+
+    const textSafe = config['motion.textSafe'] !== false
+    popCount = 0
+    largeCount = 0
+    textSafeCount = 0
     for (const el of found) {
-      el.classList.add('dts-hover-target')
-      if (stable.has(el)) {
-        el.classList.add('dts-stable-target')
-        el.classList.remove('dts-motion-target')
+      clearClasses(el)
+      if (textSafe && matchesAny(el, [TEXT_SAFE_SELECTOR])) {
+        el.classList.add('dts-textsafe')
+        textSafeCount += 1
+      } else if (matchesAny(el, [LARGE_SELECTOR])) {
+        el.classList.add('dts-pop-lg')
+        largeCount += 1
       } else {
-        el.classList.remove('dts-stable-target')
-        el.classList.add('dts-motion-target')
+        el.classList.add('dts-pop')
+        popCount += 1
       }
-      // Only a decorative composer may use the stronger focus scale. Under the
-      // default click-safe mode the composer is stable, so it never gets it.
-      const focus = unstable.has(el) && el.matches('[data-composer-card]')
-      el.classList.toggle('dts-focus-target', focus)
     }
+
+    /**
+     * Hard guarantee for the composer.
+     *
+     * Even with a generous budget, the card is always the LAST match in document
+     * order, so any truncation eats it first. It is the single element the whole
+     * feature is about, so it gets marked unconditionally — budget or not.
+     */
+    const composer = doc.querySelector('[data-composer-card]')
+    if (composer !== null && composer.isConnected && !foundSet.has(composer)) {
+      clearClasses(composer)
+      composer.classList.add('dts-pop-lg')
+      found.push(composer)
+      largeCount += 1
+    }
+
     marked = found
-    stableCount = stable.size
-    motionCount = unstable.size
   }
 
   function scheduleMark() {
@@ -309,6 +342,7 @@ export function createInteractionLayer(options) {
       // Panels open long after the last sync(), so the entrance class has to be
       // re-applied on every DOM change too — otherwise it never lands.
       markPanels()
+      markBubbles()
     })
   }
 
@@ -320,8 +354,54 @@ export function createInteractionLayer(options) {
       && config['motion.panelEnter'] > 0
     for (const panel of doc.querySelectorAll('[role="dialog"]')) {
       panel.classList.toggle('dts-panel-enter', on)
-      panel.classList.remove('dts-hover-target', 'dts-focus-target', 'dts-stable-target', 'dts-motion-target')
+      for (const name of PLUGIN_CLASSES) panel.classList.remove(name)
     }
+  }
+
+  /**
+   * One entrance per newly mounted message bubble.
+   *
+   * The first pass only *primes* the set: on startup every bubble already in the
+   * transcript would otherwise animate at once, which reads as a whole-page
+   * flash rather than as "a new message arrived".
+   */
+  function markBubbles() {
+    const config = readConfig()
+    const on = config['motion.enabled'] === true && config['motion.messageEnter'] > 0
+    const bubbles = doc.querySelectorAll('[class*="_bubble"]')
+    if (!bubblesPrimed) {
+      for (const bubble of bubbles) seenBubbles.add(bubble)
+      bubblesPrimed = true
+      return
+    }
+    if (!on) {
+      for (const bubble of bubbles) seenBubbles.add(bubble)
+      return
+    }
+    for (const bubble of bubbles) {
+      if (seenBubbles.has(bubble)) continue
+      seenBubbles.add(bubble)
+      bubble.classList.add('dts-bubble-in')
+      bubble.addEventListener('animationend', () => bubble.classList.remove('dts-bubble-in'), { once: true })
+    }
+  }
+
+  /** The conversation column fades in once when the plugin starts. */
+  function markPageEnter() {
+    if (pageEntered) return
+    const config = readConfig()
+    if (config['motion.enabled'] !== true || !(config['motion.pageEnter'] > 0)) return
+    const column = doc.querySelector('[class*="_centerCol"]') ?? doc.querySelector('[data-phase]')
+    if (column === null) return
+    pageEntered = true
+    column.classList.add('dts-page-in')
+    column.addEventListener('animationend', () => column.classList.remove('dts-page-in'), { once: true })
+  }
+
+  /** The overshoot of the spring: x1/x2 fixed, y2 is the user's tuning knob. */
+  function springCurve(spring) {
+    const overshoot = Math.min(2.2, Math.max(1, Number(spring) || 1.56))
+    return `cubic-bezier(0.34, ${overshoot}, 0.64, 1)`
   }
 
   return {
@@ -329,7 +409,7 @@ export function createInteractionLayer(options) {
       const config = readConfig()
       const on = config['motion.enabled'] === true && config['motion.hoverEnabled'] === true
       if (!on) {
-        doc.documentElement.removeAttribute('data-dts-interaction')
+        doc.documentElement.removeAttribute('data-dts-pop')
         unmark()
         markPanels()
         if (style !== null) {
@@ -338,45 +418,66 @@ export function createInteractionLayer(options) {
         }
         return
       }
-      doc.documentElement.setAttribute('data-dts-interaction', '')
-      doc.documentElement.style.setProperty('--dts-hover-lift', `${config['motion.hoverLift']}px`)
-      doc.documentElement.style.setProperty('--dts-hover-scale', String(config['motion.hoverScale']))
-      doc.documentElement.style.setProperty('--dts-press-scale', String(config['motion.pressScale']))
-      doc.documentElement.style.setProperty('--dts-panel-enter', `${Math.round(config['motion.panelEnter'])}ms`)
-      doc.documentElement.style.setProperty('--dts-composer-scale', String(config['motion.composerScale']))
+      const root = doc.documentElement
+      root.setAttribute('data-dts-pop', '')
+      const shadow = Number(config['motion.popShadow'])
+      const shadowColor = `rgba(15, 23, 42, ${(0.26 * shadow).toFixed(3)})`
+      const shadowValue = shadow > 0
+        ? `0 ${Math.round(7 * shadow)}px ${Math.round(20 * shadow)}px ${-Math.round(8 * shadow)}px ${shadowColor}`
+        : '0 0 0 transparent'
+      root.style.setProperty('--dts-pop-duration', `${Math.round(config['motion.popDuration'])}ms`)
+      root.style.setProperty('--dts-pop-easing', springCurve(config['motion.spring']))
+      root.style.setProperty('--dts-press-duration', '100ms')
+      root.style.setProperty('--dts-hover-scale', String(config['motion.hoverScale']))
+      root.style.setProperty('--dts-press-scale', String(config['motion.pressScale']))
+      root.style.setProperty('--dts-large-scale', String(config['motion.largeScale']))
+      root.style.setProperty('--dts-hover-lift', `${config['motion.hoverLift']}px`)
+      root.style.setProperty('--dts-pop-shadow', shadowValue)
+      root.style.setProperty('--dts-pop-shadow-lg', shadow > 0
+        ? `0 ${Math.round(22 * shadow)}px ${Math.round(52 * shadow)}px ${-Math.round(20 * shadow)}px ${shadowColor}`
+        : '0 0 0 transparent')
+      root.style.setProperty('--dts-panel-enter', `${Math.round(config['motion.panelEnter'])}ms`)
+      root.style.setProperty('--dts-message-enter', `${Math.round(config['motion.messageEnter'])}ms`)
+      root.style.setProperty('--dts-page-enter', `${Math.round(config['motion.pageEnter'])}ms`)
       ensureStyle()
       mark()
       markPanels()
+      markBubbles()
+      markPageEnter()
     },
     /** Called after any DOM mutation by the owner's single observer budget. */
     onDomChanged: scheduleMark,
     getDiagnostics: () => {
       const config = readConfig()
       return {
-        enabled: doc.documentElement.hasAttribute('data-dts-interaction'),
-        markedTargets: marked.length,
-        focusTargets: doc.querySelectorAll('.dts-focus-target').length,
+        enabled: doc.documentElement.hasAttribute('data-dts-pop'),
+        popTargets: popCount,
+        largeTargets: largeCount,
+        textSafeTargets: textSafeCount,
         scope: doc.querySelector('[role="dialog"]') !== null && config['motion.scopeToDialog'] === true ? 'dialog' : 'page',
         panels: doc.querySelectorAll('.dts-panel-enter').length,
-        clickSafe: config['motion.clickSafe'] !== false,
-        stableTargets: stableCount,
-        motionTargets: motionCount,
+        bubblesAnimating: doc.querySelectorAll('.dts-bubble-in').length,
+        pageEntered,
+        spring: springCurve(config['motion.spring']),
       }
     },
     destroy() {
       unmark()
       // Belt-and-braces: a stale node could have been re-rendered between the
       // last mark() and disposal. Leave no plugin class behind.
-      for (const el of doc.querySelectorAll('.dts-hover-target, .dts-focus-target, .dts-stable-target, .dts-motion-target')) {
-        clearClasses(el)
-      }
+      for (const el of doc.querySelectorAll('.dts-pop, .dts-pop-lg, .dts-textsafe')) clearClasses(el)
       for (const panel of doc.querySelectorAll('.dts-panel-enter')) panel.classList.remove('dts-panel-enter')
+      for (const bubble of doc.querySelectorAll('.dts-bubble-in')) bubble.classList.remove('dts-bubble-in')
+      for (const page of doc.querySelectorAll('.dts-page-in')) page.classList.remove('dts-page-in')
       if (style !== null) {
         style.remove()
         style = null
       }
-      doc.documentElement.removeAttribute('data-dts-interaction')
-      for (const name of ['--dts-hover-lift', '--dts-hover-scale', '--dts-press-scale', '--dts-panel-enter', '--dts-composer-scale']) {
+      doc.documentElement.removeAttribute('data-dts-pop')
+      for (const name of ['--dts-pop-duration', '--dts-pop-easing', '--dts-press-duration',
+        '--dts-hover-scale', '--dts-press-scale', '--dts-large-scale', '--dts-hover-lift',
+        '--dts-pop-shadow', '--dts-pop-shadow-lg', '--dts-panel-enter', '--dts-message-enter',
+        '--dts-page-enter']) {
         doc.documentElement.style.removeProperty(name)
       }
     },

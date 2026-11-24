@@ -37,6 +37,12 @@ html[data-dts] .dts-grid-canvas {
   -webkit-mask-image: linear-gradient(rgba(0,0,0,1) 0%, rgba(0,0,0,.9) 20%, rgba(0,0,0,.4) 55%, rgba(0,0,0,0) 100%);
   mask-image: linear-gradient(rgba(0,0,0,1) 0%, rgba(0,0,0,.9) 20%, rgba(0,0,0,.4) 55%, rgba(0,0,0,0) 100%);
 }
+/* Ambient star field: between the fluid background and the whale watermark, so
+   it reads as depth rather than as dust sitting on the UI. */
+html[data-dts] .dts-ambient-canvas {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  z-index: -1; pointer-events: none; display: block;
+}
 /* in-content placement (quantum.q3Placement = content) */
 html[data-dts] .dts-particle-canvas {
   position: absolute; inset: 0; width: 100%; height: 100%;
@@ -93,6 +99,7 @@ export function createLayerStyles(options) {
     return config['fluid.enabled'] === true
       || config['quantum.q1Enabled'] === true
       || config['quantum.q3Enabled'] === true
+      || config['ambient.enabled'] === true
       || config['spotlight.enabled'] === true
       || config['appearance.backgroundMode'] !== 'solid'
   }

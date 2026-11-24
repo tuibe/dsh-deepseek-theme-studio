@@ -385,3 +385,223 @@ Codex 报告了 4 点，Lead 逐条处理：
 
 Codex 的两条验证命令（`node --check src/effects/interaction.js`、`git diff --check`）均通过；
 最终构建、冒烟和运行期复验由 Lead 在本机完成。
+
+---
+
+## 12. 0.2.3-alpha.2 复验 + 动画增强（0.2.0）
+
+**环境**：宿主 **DSH 0.2.3-alpha.2**（desktop profile，`$DSH_HOME=C:\Users\草木\.dsh`，
+profile 目录 `profiles\desktop`）；插件以本地 `link:` 安装；`theme-studio.json` 内容为 `{}`，即出厂默认蓝白主题。
+
+### 12.1 兼容（宿主契约逐条核验）
+
+| 观测 | 命令 / 来源 | 结果 |
+|---|---|---|
+| 运行版本 | `cordis_inspect` host `Runtime.getVersion` | `0.2.3-alpha.2` |
+| loader 条目 | `plugin_manager list_plugins` | `include:deepseek-theme-studio`，`enabled: true`，`fiberPhase: active` ✔ |
+| 条目在组合里 | profile `package.json` → `dsh.profile.bundles` 含 `dsh-deepseek-theme-studio` ✔ | 改动前**缺失**，已修复（见 12.4）|
+| 客户端注册契约 | `app.asar` 内 `dsh-client-modules/lib/client.js` | 仍是 `window.__ModuleLoader__.load({ id, factory })` ✔ |
+| 设置行槽位 | 10 个宿主 client bundle 仍注册 `settings.general.item` | `inject` → `register({name,id,order})` 形态未变 ✔ |
+| DOM 钩子 | `_ops/tools/asar-grep.mjs` 扫 0.2.3 全部 client bundle | `data-composer-card` 7、`data-conversation-scroll` 3、`data-composer-seat` 3、`data-phase` 3、`_centerCol` 1、`_sidebarCol` 1、`_userStack` 1、`_bubble` 2 ✔ |
+| 主题服务 | 同上 | `overrideTokens` 仍在（5 个 bundle），22 个 `--dsw-*` 令牌全部存在 ✔ |
+| 插件兼容门禁 | `dsh-app-boot/src/plugin-compatibility.ts` | 只校验 `engines.dsh` / dsh peer；`>=0.2.0-rc.2 <0.3.0-0` 满足 ✔ |
+| `node scripts/verify-tokens.mjs` | 扫 0.2.3 `app.asar` | 290 个文件、宿主已声明 **529** 个令牌，本插件 **22/22** 命中，exit 0 ✔ |
+| `node scripts/build.mjs --check` | — | `lib/client.js` 与 `src/` 同步，6452 行 / 251163 字节 ✔ |
+
+### 12.2 新增动画（结构验证）
+
+`node scripts/smoke-dom.mjs`（本轮新增，零依赖 DOM 桩）真跑 `mod.apply(ctx)` → `ctx.effect` 启动 →
+3 帧动画循环 → 断言各层挂载 → 执行 dispose 再断言零残留。输出：
+
+```
+parameter count: 126
+ambient: {"enabled":true,"renderer":"canvas2d","particles":70,"renderedFrames":2,"running":true,"size":"1280x800"}
+cursor:  {"enabled":true,"mounted":true,"hot":false,"visible":false,"ripples":0,"modifierArmed":false}
+particles:{"enabled":true,"particles":1400,...}   fluid:{"fallback":true,...}   glass:{"enabled":true,...}
+interaction:{"enabled":true,"clickSafe":true,...}  theme:{"backgroundMode":"fluid",...}
+✔ DOM smoke passed: every requested layer mounted, and dispose left no residue
+```
+
+| 断言 | 结果 |
+|---|---|
+| 星尘层在默认参数下启动，70 粒 | ✔ |
+| 光环元素挂到 `body`，`html[data-dts-cursor]` 就位 | ✔ |
+| `html[data-dts]` / `[data-dts-interaction]` 就位 | ✔ |
+| dispose 后 4 个根属性全清、4 类节点全无 | ✔ |
+| 释放过程中 `console.error` 零调用 | ✔ |
+
+### 12.3 设计与克制约束
+
+| 约束 | 实现 |
+|---|---|
+| 不替换系统光标 | 光环 / 涟漪全部 `pointer-events: none`，无 `cursor:` 覆写 ✔ |
+| 不改变点击目标几何 | 光环、涟漪、`keys.keyFlash` 只动 `border-color` / `background` / `box-shadow`；点击安全规则（§11.2）不变 ✔ |
+| 静止即停 | 星尘无指针、无涟漪时循环直接退出；光环跟随在到达目标那帧退出 ✔ |
+| 单一 MutationObserver 预算 | 未新增 observer；消息入场复用现有那一个 ✔ |
+| 帧预算 | 星尘 30 fps 上限；涟漪走 CSS animation，不占 JS 帧 ✔ |
+| 窄屏 | 星尘与网格、鲸鱼水印同样在 `<768 px` 关闭；光标/按键反馈不设宽度门槛 ✔ |
+| `prefers-reduced-motion` | 星尘静态一帧；光环瞬时跟随；涟漪不生成；气泡/页面入场动画关闭 ✔ |
+| 双源冲突 | `sources.tick()` 增加 6 ms 同帧守卫，多个渲染层共用一行时钟时游走源不再加速 ✔ |
+
+### 12.4 本轮修复的装载断点
+
+`dsh.profile.bundles` 里缺少 `dsh-deepseek-theme-studio`，而 `cordis.patch.yml` 里仍留着
+`- id: deepseek-theme-studio / disabled: true`。组合是按 bundles 顺序把各 bundle 的 patch 叠到空表上，
+再叠 profile patch —— bundle 缺位时那条 insert 从未发生，profile 的 `disabled` 便指向一个不存在的条目，
+结果为「装了但完全不加载」，且不报错。处理：
+
+1. `plugin_manager remove_bundle dsh-deepseek-theme-studio` → `install_bundle link:C:/DSH1/dsh-deepseek-theme-studio`（重新进入 `dsh.profile.bundles`，`application: applied`）；
+2. profile `cordis.patch.yml` 该行改为 `disabled: false`；
+3. 复核：`list_plugins` 出现 `include:deepseek-theme-studio` / `active`。
+
+### 12.5 未验证事项（如实列出）
+
+1. **浏览器内视觉与手感未经截图取证**：本轮宿主 Web 端点（`http://127.0.0.1:55793`）对未配对客户端返回 401，
+   桌面窗口的 client bundle 在页面加载时已固定，故星尘密度、光环尺寸、涟漪观感只在 DOM 冒烟与参数层面验证，
+   **需在桌面窗口刷新后由人眼确认一次**（刷新即重新取 boot manifest，插件随之加载）。
+2. 星尘在 `appearance.surfaces = false` 时会被宿主不透明底色遮住（与流体层同因），未单独截图对比。
+3. 连线模式（`ambient.linkDistance > 0`）在 `>190` 粒时自动跳过，该分支持未做逐帧性能采样。
+
+---
+
+## 13. 0.3.0：删除光标跟随，改为元素弹缩
+
+**用户改向**：0.2.0 的「跟随光标的光环 + 点击水波 + 按键涟漪」不要了；要的是「鼠标滑过或点击
+对话框 / 按钮时，元素自己伸缩、弹出，像 iOS 图标那样」。
+
+### 13.1 删除范围
+
+| 项 | 处理 |
+|---|---|
+| `src/effects/cursor.js`（光环 / 点击涟漪 / 按键涟漪 / 修饰键提示）| 整文件删除，`scripts/build.mjs` 模块表同步移除 |
+| 参数 `cursor.*`（8 项）/ `keys.*`（5 项）| 全部删除，参数总数 126 → 116 |
+| `cursor` 参数组 | 从 `GROUP_ORDER` 移除 |
+| `ambient.pulse()` + `AMBIENT_RIPPLE_LIFE` + `ripples` 状态 | 从星尘层删除（点击扩散环是光标层的东西）|
+| `apply.js` 的 `pointerdown` 监听、`cursor` 生命周期、诊断字段 | 删除 |
+| `theme-layer.js` 的 `isPristine()` | `cursor.enabled` / `keys.enabled` 换成 `motion.hoverEnabled` |
+
+旧参数残留在 `theme-studio.json` / localStorage 里不会报错：`coercePatch` 只认参数表里的键，未知键直接丢弃。
+
+### 13.2 弹缩实测（`scripts/smoke-dom.mjs`）
+
+桩里放一个 `<button>` 与一个 `<textarea>`，跑完 `apply()` + 一帧同步：
+
+```
+parameter count: 116
+interaction: {"enabled":true,"popTargets":1,"largeTargets":0,"textSafeTargets":1,
+              "spring":"cubic-bezier(0.34, 1.56, 0.64, 1)"}
+probe classification: button=_newSession dts-pop · field=dts-textsafe · card=dts-pop-lg
+✔ DOM smoke passed: every requested layer mounted, and dispose left no residue
+```
+
+| 断言 | 结果 |
+|---|---|
+| 普通按钮被判为 `dts-pop` | ✔ |
+| 输入卡 `[data-composer-card]`（用户口中的「对话框」）被判为 `dts-pop-lg` | ✔ |
+| `textarea` 被判为 `dts-textsafe`（几何不动）| ✔ |
+| `html[data-dts-pop]` 就位、`data-dts-cursor` / `[data-dts-interaction]` 不再出现 | ✔ |
+| dispose 后根属性、canvas、pop 类全部清空；`.dts-cursor-halo` / `.dts-cursor-ripple` 不存在 | ✔ |
+
+### 13.2.1 大面幅度：第一版太小（发布前修正）
+
+第一版把大面（输入卡 / 消息气泡）压在 `1.008×`，实际观感等于没动 —— 用户反馈「对话框没有动画」。
+三处修正（仍属 0.3.0，未发布过 1.008 的版本）：
+
+1. `motion.largeScale` 默认 **1.008 → 1.02**，上限放到 **1.06**；按下改为 `largeScale × 0.988`。
+2. hover / active 的 `transform` 加 `!important`：宿主会给部分卡片写内联 `transform`（合成层提示），
+   内联声明会压过任何样式表规则，不加 `!important` 就等于没写。
+3. 输入卡的 `_card` 可能带 `pointer-events: none`（点击穿透到 textarea），这样的元素**收不到 `:hover`**；
+   因此增加 `[data-composer-seat]:hover:not(:focus-within) .dts-pop-lg` 兜底 —— 由外层座位驱动卡片。
+   同时把 `[data-composer-seat]` / `[class*="_composerSeat"]` 加进 `motion.hoverTargets`，
+   这样卡片四周的 padding 区域被滑过时也会响应。
+
+`smoke-dom.mjs` 的选择器桩同时修了一个自身缺陷：属性选择器在属性**不存在**时会被当成空字符串匹配，
+于是 `[contenteditable=""]` 会命中页面上每一个元素 —— 现已要求属性必须存在。
+
+### 13.3 为什么这次允许改几何（与 §11.2 不矛盾）
+
+§11.2 冻结点击目标的结论来自一个具体缺陷：**5 px `translateY`** 把元素从指针下挪走 →
+指针离开 → 上浮反相 → 指针再进入 → 边缘抖动，且底边点击可能打偏。
+
+0.3.0 的规则是「不动命中盒」而不是「不动元素」：
+
+| 状态 | 变化 | 为什么不会抖 |
+|---|---|---|
+| hover | `scale(1.035)`，`hoverLift` 默认 0 | 放大是把盒子朝外扩，指针原本在盒内，放大后仍在盒内 |
+| active | `scale(0.94)` | `:active` 跟随按下直到 mouseup，指针飘出去也不会撤销 |
+| 松开 | `cubic-bezier(0.34, spring, 0.64, 1)` 回弹 | 过冲量由 `motion.spring` 控制（1 = 不过冲）|
+
+唯一保留冻结的是文本输入（`motion.textSafe`）：文本框缩放会让自己的光标与选区一起发虚。
+消息气泡与输入卡归入「大面」，只做 1.02× 微缩放，`:focus-within` 时完全停住。
+
+### 13.4 未验证事项
+
+1. **真实窗口里的手感未经截图取证**：宿主 Web 端点对未配对客户端返回 401，桌面窗口的 client bundle 在
+   页面加载时已固定，故缩放幅度与回弹观感只在 DOM 冒烟与参数层面验证，需刷新桌面窗口后由人眼确认。
+2. 相邻小按钮之间的 hover 抖动在极端密集布局下未做量化（1.035× 在常规 6–8 px 间距下不重叠）。
+
+### 13.2.2 「对话框还是不明显」的根因：两条 CSS 规则互相抵消
+
+用真实窗口取证：`windows_computer_use_screenshot` 拍下桌面窗口，用 `SetCursorPos` 把指针移开输入卡
+（819,380）拍基线，再移到输入卡中心（1079,869）拍第二张，`scripts/png-diff.mjs` 比对。整窗
+差异 2.77% 全部来自正在生成的对话内容与星尘动画；**逐像素看输入卡边界，hover 前后完全一致**
+（卡片 x 425–1128 / y 692–796 两张相同）。
+
+两条真正的阻塞：
+
+| 根因 | 机制 |
+|---|---|
+| `.dts-pop-lg:focus-within { transform: none !important }` | 与 `:hover` 规则**同特异性、同重要性**，且写在文件后面 → 后出现者胜。而 DSH 的输入框在会话打开时**自动聚焦**，`focus-within` 恒为真，于是卡片的 `transform` 永远被压成 `none`。上一版为「打字不抖」加的那条冻结，正好把整块动画废掉 |
+| `motion.scopeToDialog` 默认 `true` | 设置页本身是 `[role="dialog"]`；打开它调参数时，标记范围被收窄到 dialog 内部，**主页面的输入卡根本不在标记集合里**，连类都没有 |
+
+修正：
+
+1. 删除 `:focus-within` 冻结规则（`dts-textsafe` 仍单独冻结文本区本身，见 §4.6）。
+2. `motion.scopeToDialog` 默认改为 `false`：面板打开时主页面照常响应。
+3. `motion.largeScale` 默认 `1.03`、上限 `1.08`；`motion.popShadow` 默认 `0.5`，大面阴影公式改为
+   `0 22·s px 52·s px -20·s px`（原来 14/40/16 太轻，看不出「浮起来」）。
+4. 设置行标题追加版本号（`v0.3.0 · 116 项参数`），以后不必再猜页面加载的是哪一版。
+
+**这一步之后仍要求刷新页面**：宿主窗口被 `HOST_INPUT_DENIED` 保护，工具无法向 DSH 自己的窗口注入
+Ctrl+R，刷新必须由人按。
+
+### 13.2.3 真正的根因：`MAX_TARGETS = 400` 按文档顺序把输入卡截掉了
+
+用户在 13.2.2 之后反馈："除了对话框那部分的按键，其余均有反馈"。这句话把范围锁死在一处——
+其它元素（文档靠前）有动画，只有输入卡（文档最后）没有。
+
+读宿主源码 `@deepseek-ai/dsh-client-ui-conversation/src/client/skeleton/InputBar.tsx` 确认结构：
+
+```tsx
+<div className={clsx(css.root, variant === 'hero' && css.hero)}>
+  <div ref={cardRef} tabIndex={-1} className={clsx(css.card, ...)} data-composer-card onMouseDown={...}>
+```
+
+`css.card` 在 `InputBar.module.css` 里**没有** `pointer-events: none`，也没有 `transform`，
+所以 `:hover` 本身没问题；外层容器也没有 `data-composer-seat`（那条兜底选择器其实一直没命中）。
+
+问题在标记阶段：
+
+```js
+found = found.filter(...).slice(0, MAX_TARGETS)   // 400
+```
+
+`querySelectorAll` 返回**文档顺序**。侧栏会话条目、消息气泡、每轮工具卡片全都在前面，
+输入卡永远排在最后。本机的会话已经很长，400 个名额在前半屏就用完了 —— 输入卡连
+`dts-pop-lg` 类都没加上，CSS 写得再对也没有对象可作用。
+
+修正：
+
+| 项 | 之前 | 现在 |
+|---|---|---|
+| `MAX_TARGETS` | 400 | 2000 |
+| composer 兜底 | 无 | 无条件标记（`doc.querySelector('[data-composer-card]')`，不看配额、不看顺序）|
+
+回归保护：`smoke-dom.mjs` 现在先在 composer 之前塞 **300 个 `_chip` 按钮**，再断言
+`card=dts-pop-lg`：
+
+```
+interaction: {"popTargets":301,"largeTargets":1,"textSafeTargets":1,...}
+probe classification: button=_newSession dts-pop · field=dts-textsafe · card=dts-pop-lg
+✔ DOM smoke passed
+```

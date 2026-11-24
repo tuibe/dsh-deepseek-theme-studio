@@ -232,7 +232,8 @@ html[${ROOT_ATTR}] .dts-settings * {
     if (config['appearance.backgroundMode'] !== 'solid') return false
     if (config['appearance.bgColor'] !== '' || config['appearance.accentColor'] !== '') return false
     for (const key of ['fluid.enabled', 'glass.enabled', 'quantum.q1Enabled', 'quantum.q2Enabled',
-      'quantum.q3Enabled', 'quantum.q4Enabled', 'spotlight.enabled']) {
+      'quantum.q3Enabled', 'quantum.q4Enabled', 'spotlight.enabled', 'ambient.enabled',
+      'motion.hoverEnabled']) {
       if (config[key] === true) return false
     }
     return true

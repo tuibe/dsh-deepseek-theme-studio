@@ -32,6 +32,7 @@ const MODULES = [
   'effects/fluid.js',
   'effects/grid.js',
   'effects/particles.js',
+  'effects/ambient.js',
   'effects/spotlight.js',
   'effects/glass.js',
   'effects/layers.js',

@@ -1,13 +1,39 @@
 # dsh-deepseek-theme-studio
 
 DeepSeek 官网视觉语言的 **DSH Web 客户端主题插件**：毛玻璃 / 液化（流体）/ 量子化（Q1–Q4）三类效果，
-全部参数可调、可持久化、可程序化调用。
+加上 0.2.0 起的**背景粒子层**与**光标 / 按键互动动画**，全部参数可调、可持久化、可程序化调用。
 
-- 宿主实测版本：**0.2.1-rc.2**（同时兼容 **0.2.0-rc.2**；`dsh.compatibility.dshReleases` 两个版本都已声明）
-- 目标 profile：**web**（`$env:USERPROFILE\.dsh\profiles\web`）
-- 出厂默认是**蓝白官网主题**（流体背景 + 毛玻璃 + 鲸鱼水印）；点预设里的 **「原生」** 立即回到
-  DSH 原生外观，关闭全部效果后不写任何令牌、不挂任何 canvas。
+- 当前版本：**0.3.0**（0.3.0 删除了跟随光标的光环/涟漪，改为元素自身的 iOS 式弹缩，见 §0）
+- 宿主实测版本：**0.2.3-alpha.2**（同时兼容 **0.2.1-rc.2** / **0.2.0-rc.2**；`dsh.compatibility.dshReleases` 三个版本都已声明）
+- 目标 profile：**desktop** / **web** 均可（`$env:USERPROFILE\.dsh\profiles\<profile>`）
+- 出厂默认是**蓝白官网主题**（流体背景 + 粒子星尘 + 毛玻璃 + 鲸鱼水印 + 光标光环）；点预设里的 **「原生」** 立即回到
+  DSH 原生外观，关闭全部效果后不写任何令牌、不挂任何 canvas、不留任何 DOM 节点。
 - 复用与许可台账见 [`REUSE.md`](REUSE.md)，第三方许可见 [`LICENSES/`](LICENSES/NOTICE.md)。
+
+---
+
+## 0. 0.3.0：元素弹缩（iOS 风格）＋ 背景粒子
+
+| 交互 | 做了什么 | 默认 |
+|---|---|---|
+| 元素弹缩 `motion.*` | 鼠标滑过按钮 / 可点行 / 输入卡时**放大**，按下时**缩小**，松手用带过冲的贝塞尔**弹回** | 开（悬停 1.035×，按下 0.94×）|
+| 背景粒子 `ambient.*` | 全屏 30 fps 星尘层：深度视差、指针推开、可选连线；静止即停 | 开（70 粒，50% 不透明）|
+| 页面 / 消息入场 `motion.pageEnter` / `motion.messageEnter` | 会话列首屏淡入一次；每条新消息气泡「缩一下再弹回」入場一次 | 240 ms / 180 ms |
+
+关于 0.2.x 的那套光标效果：**已删除**（跟随光标的光环、点击水波、按键涟漪、修饰键提示一并去掉，
+参数 `cursor.*` / `keys.*` 不再存在）。反馈改由元素自身承担：指针悬停就是放大，按下就是缩小，
+松开就是回弹 —— 不需要另画一个光标。
+
+边界与克制：
+
+- **不做垂直位移**（`motion.hoverLift` 默认 0）。`translateY` 会把元素从指针下挪走，是旧版抖动的根因。
+  缩放只朝外扩，指针留在元素内，不会出现“抬起→离开→落下”的来回。
+- 输入框 / `textarea` / `contenteditable` **永不缩放**（`motion.textSafe`）：文本框缩放会让自己的
+  光标和选区一起发虚，打字时很难受。
+- 消息气泡与输入卡这种大面做 1.03× 的缩放（2% 上下文字仍清晰）。**不按焦点冻结**：输入框默认就是聚焦的，
+  一旦按 `:focus-within` 冻结，整块卡片的动画就永远不会出现。
+- 只让**最外层**命中元素动；`<span>` 套在 `<button>` 里不会被叠成 1.07×。
+- `prefers-reduced-motion: reduce` 下没有任何缩放与入场动画。
 
 ---
 
@@ -22,10 +48,11 @@ DeepSeek 官网视觉语言的 **DSH Web 客户端主题插件**：毛玻璃 / �
 | `src/**` | 可读源码（参数表、存储、各效果引擎、设置行、程序化 API）|
 | `scripts/build.mjs` | 零依赖构建（`--check` 做陈旧检查）|
 | `scripts/smoke-factory.mjs` | 在 Node 里跑一遍 bundle 工厂，抓语法/导出错误 |
+| `scripts/smoke-dom.mjs` | 零依赖 DOM 冒烟：真跑 `apply()` → 各层挂载 → 释放无残留 |
 | `scripts/verify-tokens.mjs` | 令牌漂移自检（失败**非零退出**）|
 | `scripts/png-diff.mjs` | 纯 Node PNG 双图差异报告（含 `--dump-region diff`）|
 | `REUSE.md` | 复用与许可台账（Phase 0 闸门产物：逐行来源与许可判定）|
-| `ACCEPTANCE.md` | 验收实测证据（含 0.2.1-rc.2 复验与点击安全，§11）|
+| `ACCEPTANCE.md` | 验收实测证据（含 0.2.3-alpha.2 复验与动画增强，§12）|
 | `icon.svg`, `LICENSE`, `LICENSES/` | 图标 / 许可证 / 第三方声明 |
 
 ---
@@ -112,8 +139,14 @@ Remove-Item Env:DSH_PROFILE, Env:DSH_PROFILE_DIR, Env:DSH_SHELL -ErrorAction Sil
 
 ### 2.3 升级
 
-本地 link 安装：改完 `src/` 后 `node scripts/build.mjs`（或用 `pnpm run build`），再重启 profile 即可；
-不需要重新 `add`。npm 安装：`& $dsh plugin --profile web add dsh-deepseek-theme-studio@<新版本>` 后重启。
+本地 link 安装：改完 `src/` 后 `node scripts/build.mjs`（或用 `pnpm run build`），**然后硬刷新页面**即可，
+不需要重新 `add`、也不需要重启 profile（HMR 会重新取 bundle）。
+
+> 有一个例外：`bundle` 本身的装载关系（`dsh.bundle.patch` / `dsh.profile.bundles`）变了才需要重组合。
+> `plugin_manager` 没有 `update` 动作，只有 `remove_bundle` → `install_bundle <spec>`；对已装包直接
+> `install_bundle` 会报 `already-installed`。用 `link:` 安装时这条路径同样有效（`application: applied` 即热生效）。
+
+npm 安装：`& $dsh plugin --profile web add dsh-deepseek-theme-studio@<新版本>` 后重启 profile。
 
 ### 2.4 卸载
 
@@ -298,34 +331,88 @@ window.dshThemeStudio.formatSelfCheck()
 | 光斑直径 / 颜色 | `spotlight.size` / `spotlight.color` | 16–200 px / HEX | 50 / `#ffffff` |
 | 触发元素选择器 | `spotlight.selector` | 文本 | 见下 |
 | 动画总开关 | `motion.enabled` | 开关 | 开 |
-| 统一时长 | `motion.duration` | 80–400 ms，步长 10 | 160 |
-| 缓动曲线 | `motion.easing` | 4 条（均无过冲）| `cubic-bezier(0.2, 0, 0, 1)` |
-| 悬停弹起放大 | `motion.hoverEnabled` | 开关 | 开 |
-| 悬停上浮 / 放大 | `motion.hoverLift` / `motion.hoverScale` | 0–14 px / 1.00–1.16× | 5 px / 1.045× |
-| 按压下沉 | `motion.pressScale` | 0.90–1.00× | 0.985× |
+| 统一时长（颜色等）| `motion.duration` | 80–400 ms，步长 10 | 160 |
+| 缓动曲线（颜色等）| `motion.easing` | 4 条（均无过冲）| `cubic-bezier(0.2, 0, 0, 1)` |
+| 元素弹缩互动 | `motion.hoverEnabled` | 开关 | 开 |
+| 悬停放大 | `motion.hoverScale` | 1.00–1.15×，步长 0.005 | 1.035× |
+| 按下缩小 | `motion.pressScale` | 0.85–1.00×，步长 0.005 | 0.94× |
+| 大面缩放 | `motion.largeScale` | 1.00–1.08×，步长 0.002 | 1.03× |
+| 回弹过冲 | `motion.spring` | 1.00–2.20，步长 0.02（1 = 不回弹）| 1.56 |
+| 弹缩时长 | `motion.popDuration` | 180–420 ms，步长 10 | 260 |
+| 悬停投影强度 | `motion.popShadow` | 0–1，步长 0.05 | 0.5（0 = 不投影）|
+| 悬停上浮距离 | `motion.hoverLift` | 0–14 px，步长 0.5 | **0**（>0 会引入边缘抖动）|
+| 输入区不缩放 | `motion.textSafe` | 开关 | **开** |
 | 面板入场时长 | `motion.panelEnter` | 0–400 ms，步长 10 | 200 |
-| 输入卡聚焦放大 | `motion.composerScale` | 1.00–1.20× | 1.04× |
-| 面板打开时只动该面板 | `motion.scopeToDialog` | 开关 | 开 |
-| 悬停动画作用元素 | `motion.hoverTargets` | 文本（CSS 选择器）| 见 `src/params.js` |
-| 点击目标不位移（点击安全）| `motion.clickSafe` | 开关 | **开** |
+| 面板打开时只动该面板 | `motion.scopeToDialog` | 开关 | 关（开着会让主页面在设置页打开时完全不动）|
+| 弹缩作用元素 | `motion.hoverTargets` | 文本（CSS 选择器）| 见 `src/params.js` |
+| 消息气泡入场 | `motion.messageEnter` | 0–400 ms，步长 10（0 = 关闭）| 180 |
+| 页面首屏入场 | `motion.pageEnter` | 0–600 ms，步长 20（0 = 关闭）| 240 |
 
 聚光灯默认触发选择器：`[data-conversation-header] h1, [data-conversation-header] h2, [class*="_headline"]`
 （只在标题文字/图标上触发，容器空白区不触发）。
 
-### 4.6 点击安全（`motion.clickSafe`）
+### 4.6 弹缩互动的三条规则（原「点击安全」）
 
-从 0.1.4 起默认开启。开启时：
+0.1.4 曾经把点击目标全部冻结（`transform: none`），用来修一个真实缺陷：5 px 上浮把元素从指针下
+挪走，指针离开 → 上浮反相 → 指针再进入，边缘出现可见抖动，边缘点击还会打偏。
 
-- 开关、按钮、可点击行、输入卡等**点击目标在 hover / 按压 / active 下不改变任何几何属性**
-  （没有 `translate`、`scale`、`z-index`），只保留颜色 / 边框 / 阴影 / 不透明度过渡。
-  鼠标对准哪个开关，那个开关就不会从指针下跑开，也不会再出现
-  “抬起 → 离开 hover → 落下 → 再抬起”的边缘抖动。
-- 纯装饰、且内部不含任何可交互元素的卡片仍保留悬停上浮/放大。
-- `[role="dialog"]` 等面板的入场动画改为**纯淡入**，不再有 6px 位移和 0.994 缩放；
-  打开设置页时控件在动画期间位置就是最终位置。
-- `prefers-reduced-motion: reduce` 下仍然没有位移和入场动画。
+0.3.0 改为「不动命中盒」而不是「不动元素」：
 
-把 `motion.clickSafe` 关掉即可回到旧的“所有悬停目标都上浮”的行为（供偏好旧观感的用户使用）。
+1. **悬停只缩放**，围绕 `transform-origin: center`。放大是把盒子朝外扩，指针原本在盒内，放大后仍在盒内，
+   不产生 enter/leave 震荡。`motion.hoverLift` 保留但默认 0 —— 垂直位移正是当年抖动的来源。
+2. **按下缩小**。缩小同样不会把元素从指针下抽走：`:active` 会保持到 mouseup，指针飘出去也不撤销。
+3. **松手回弹**。用 `cubic-bezier(0.34, spring, 0.64, 1)`，`motion.spring` 控制过冲量（1 = 不过冲）。
+   这就是苹果那种「按下去沉一下、松手弹回来」的手感。
+
+输入框例外：`input` / `textarea` / `contenteditable` 默认 `transform: none`（`motion.textSafe`），
+因为文本框缩放会让自己的光标和选区一起发虚。消息气泡与输入卡则归入「大面」，做 1.03× 缩放，
+且在 `:focus-within` 时完全停住。`prefers-reduced-motion: reduce` 下没有任何缩放与入场动画。
+
+### 4.7 背景粒子（星尘层）
+
+与 Q3 的鲸鱼粒子是两件事：Q3 回答“鲸鱼现在是哪个形状”，这一层回答“页面本身是活的”。
+它挂 `z-index: -1`（在流体之上、鲸鱼水印之下），只有 `≥768 px` 宽时启用。
+
+| 设置项 | 键 | 范围 / 步长 | 默认 |
+|---|---|---|---|
+| 背景粒子层 | `ambient.enabled` | 开关 | 开 |
+| 粒子数量 | `ambient.count` | 0–320 粒，步长 10 | 70 |
+| 粒子半径 | `ambient.size` | 0.4–5 px，步长 0.1 | 1.5 |
+| 漂移速度 | `ambient.speed` | 0–2×，步长 0.05 | 0.5 |
+| 粒子不透明度 | `ambient.opacity` | 0.02–1 | 0.5 |
+| 粒子颜色 | `ambient.color` | HEX | `#8ab2e2` |
+| 指针视差强度 | `ambient.parallax` | 0–1.5，步长 0.05 | 0.45 |
+| 指针推开半径 | `ambient.repelRadius` | 0–400 px，步长 5 | 150 |
+| 连线距离 / 不透明度 | `ambient.linkDistance` / `ambient.linkOpacity` | 0–160 px / 0–1 | 0（关）/ 0.18 |
+
+- 每颗粒子带独立 `depth`（0.15–1），深度同时驱动视差位移与不透明度，指针横穿窗口时读起来是**一个平面在动**，不是贴图在滑。
+- 视差中心按 0.06/帧缓动（约 400 ms 跟随），快速甩鼠标不会整层跳一下。
+- 30 fps 上限；**静止即停**：没有指针在窗口内、没有涟漪时循环直接退出，等 `pointermove` 再唤醒。
+- 连线只在 `≤190` 粒时计算（O(n²) 保护）；超过该数量连线自动跳过，其余效果不受影响。
+- 点击落在背景上的扩散环由 `cursor.ripple*` 控制，见下节。
+
+### 4.8 哪些元素会弹
+
+默认 `motion.hoverTargets` 覆盖：按钮、`[role="button"]`、树/菜单/标签/选项、开关、输入卡、
+`_card` / `_chip` / `_tile` / `_cell` / `_navCell` / `_pill` / `_row[role]` / `_bubble`，
+以及 `input` / `textarea` / `contenteditable`（后三者只做颜色过渡，几何不动）。
+
+分类规则：
+
+| 元素 | 得到什么 | 理由 |
+|---|---|---|
+| 普通控件 | `dts-pop`：悬停 1.035×、按下 0.94×、松手过冲回弹 | iOS 图标手感 |
+| 输入卡 / 气泡（大面）| `dts-pop-lg`：悬停 1.03×、按下 ×0.985 | 3% 以内文字仍清晰，再大开始发虚 |
+| 文本输入 | `dts-textsafe`：`transform: none` | 光标与选区必须清晰 |
+| 只命中一次的最外层 | 只有它加类 | 避免 `<span>` 套 `<button>` 叠成 1.07× |
+
+`motion.spring` 把过冲量映射到 `cubic-bezier(0.34, spring, 0.64, 1)` 的第二个 y 控制点：
+1.0 是普通 ease-out，1.56 是默认的「弹一下」，2.2 会明显回弹两次的观感。
+
+**配额与顺序**：标记是按 `querySelectorAll` 的文档顺序处理的，上限 `MAX_TARGETS = 2000`。
+会话记录和侧栏都在文档里排在前面，输入卡永远在最后 —— 所以 0.3.0 早期把上限定在 400 时，
+长会话里的输入卡根本没进标记集合（不是 CSS 没生效，是连类都没加上）。现在除了放宽配额，
+还对 `[data-composer-card]` 做了**无条件兜底**：不管配额、不管顺序，它一定会被标成 `dts-pop-lg`。
 
 ---
 
@@ -338,6 +425,11 @@ window.dshThemeStudio.formatSelfCheck()
 3. **单元数据里 `dsh.compatibility.dshReleases` 宿主不读取**（`app.asar` 全量 grep 无消费点）；
    字段按要求照写，实际兼容性由 `dsh.bundle.patch` / `dsh.client` / `exports` 三条契约保证。
 4. 鲸鱼轮廓是 DeepSeek 品牌资产，不属于本包 MIT 授权范围；`quantum.q3Shape` 可切换为 `ring`/`wave` 或直接关闭 Q3。
+5. **背景粒子层需要宿主表面透明才看得见**（它画在 `body` 之下）。`appearance.surfaces` 关闭或
+   `appearance.backgroundMode = solid` + 未设底色时，星尘会被宿主的不透明底色盖住 —— 这与流体层的行为一致，
+   不是新限制。
+6. **常驻动画都有帧预算**：星尘 30 fps 且静止即停；元素弹缩全部由 CSS `transition` 驱动，
+   不占 JS 帧，也不新增任何 `pointermove` / `mousemove` 监听。空闲态不推进任何 rAF。
 
 ---
 
@@ -361,9 +453,12 @@ $env:COREPACK_ENABLE_PROJECT_SPEC = "0"
 
 按顺序查这四件事：
 
-1. **profile 里有没有 bundle 条目** —— `profiles/web/package.json` 的 `dsh.profile.bundles` 必须含
+1. **profile 里有没有 bundle 条目** —— `profiles/<profile>/package.json` 的 `dsh.profile.bundles` 必须含
    `dsh-deepseek-theme-studio`；只有 `node_modules` 里有个包是**不够的**（客户端插件没有自动发现）。
-2. **重启过 profile 没有** —— 刷新页面不够，boot manifest 在 profile 启动时组合。
+   缺这一条时 `cordis.patch.yml` 里那条 `insert` 根本不会发生，`disabled` 也就指向一个不存在的条目，
+   结果是「装了但完全不加载，且不报错」—— 0.2.3-alpha.2 上就是这么坏掉的。
+2. **组合有没有重新算过** —— bundle 列表变动必须重组合（`plugin_manager` 的 `remove_bundle` → `install_bundle`，
+   或重启 profile）。只改 `lib/client.js` 则硬刷新页面就够（宿主按内容版本号重新拉 bundle）。
 3. **boot manifest 里有没有你的条目** —— 浏览器控制台执行：
    ```js
    window.__DSH_BOOT__.entries.find(e => e.id === 'dsh-deepseek-theme-studio')
@@ -401,6 +496,7 @@ node scripts/preflight-profile.mjs      # 重启前体检：loader 到底会不�
 node scripts/preflight-profile.mjs --profile desktop
 node scripts/build.mjs --check          # bundle 是否与 src 同步（非零退出 = 陈旧）
 node scripts/smoke-factory.mjs          # 在 Node 里跑 bundle 工厂，抓语法/导出错误
+node scripts/smoke-dom.mjs              # 零依赖 DOM 冒烟：真跑 apply() → 各层挂载 → 释放无残留
 node scripts/verify-tokens.mjs          # 令牌漂移自检（默认扫已解包的宿主树）
 node scripts/verify-tokens.mjs --live http://127.0.0.1:19399   # 对运行实例复检
 node scripts/png-diff.mjs a.png b.png --json out.json --dump-region diff
@@ -420,8 +516,13 @@ window.dshThemeStudio.formatSelfCheck()
 `verify-tokens.mjs` 刻意比参考实现更严格：抓不到宿主 CSS 或运行实例时**非零退出**，
 不会像 `mux9056-bot/dsh-theme` 的 `verify:live` 那样在抓取失败后仍然打印"校验通过"。
 
-**0.2.1-rc.2 复验与点击安全实测**（含开关底边点击、面板入场 keyframes、设置组不收起、180 帧采样、
-Codex 审查记录）见 [`ACCEPTANCE.md` §11](ACCEPTANCE.md)。
+`smoke-dom.mjs` 不装 jsdom：它手搓一个最小 DOM 桩（class/属性/伪选择器匹配、假 2D context、
+排队式 `requestAnimationFrame`），把真实 bundle 跑起来，断言「参数要的层都挂上了」以及
+「dispose 之后根属性、canvas、光环、涟漪一个不剩」。浏览器只把客户端插件失败报成 `<id>: failed`，
+这个脚本正是为了在 Node 里先拿到可读的报错（0.2.0 的星尘层与光标层就靠它验的）。
+
+**0.2.3-alpha.2 复验与动画增强实测**（含宿主契约逐条核验、DOM 冒烟输出、装载断点修复）见
+[`ACCEPTANCE.md` §12](ACCEPTANCE.md)；0.2.1-rc.2 的点击安全实测见 §11。
 
 
 ---

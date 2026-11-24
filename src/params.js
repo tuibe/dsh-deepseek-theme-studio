@@ -420,47 +420,108 @@ export const PARAM_DEFS = {
     zh: '缓动曲线', en: 'Easing',
   },
 
-  // ── 互动动画（悬停弹起 / 按压下沉 / 面板入场） ──────────────────────────
+  // ── 互动动画（iOS 风格弹缩：悬停放大 / 按下缩小 / 松手回弹） ────────────
   'motion.hoverEnabled': {
     type: 'boolean', group: 'motion', default: true,
-    zh: '悬停弹起放大', en: 'Hover lift & scale',
+    zh: '元素弹缩互动（悬停 / 按下 / 回弹）', en: 'Icon-style pop interaction',
   },
-  // Click targets (switches, buttons, rows, the composer) must never change
-  // geometry: a 5 px lift on a 20 px switch moves the button out from under the
-  // cursor, which both looks like jitter and makes edge clicks unreliable.
-  // Decorative cards keep the lift; this switch is the escape hatch.
-  'motion.clickSafe': {
-    type: 'boolean', group: 'motion', default: true,
-    zh: '点击目标不位移（点击安全）', en: 'Keep click targets still',
-  },
+  // Hover scales around the centre only. A vertical lift is available but
+  // defaults to 0: shifting the box downwards is what used to make the pointer
+  // leave the element and shake at the bottom edge.
   'motion.hoverLift': {
-    type: 'number', group: 'motion', default: 5, min: 0, max: 14, step: 0.5, unit: 'px',
-    zh: '悬停上浮距离', en: 'Hover lift',
+    type: 'number', group: 'motion', default: 0, min: 0, max: 14, step: 0.5, unit: 'px',
+    zh: '悬停上浮距离（默认 0，>0 会引入边缘抖动）', en: 'Hover lift (0 keeps hit boxes stable)',
   },
   'motion.hoverScale': {
-    type: 'number', group: 'motion', default: 1.045, min: 1, max: 1.16, step: 0.005, unit: '×',
+    type: 'number', group: 'motion', default: 1.035, min: 1, max: 1.15, step: 0.005, unit: '×',
     zh: '悬停放大倍率', en: 'Hover scale',
   },
   'motion.pressScale': {
-    type: 'number', group: 'motion', default: 0.985, min: 0.9, max: 1, step: 0.005, unit: '×',
-    zh: '按压下沉倍率', en: 'Press scale',
+    type: 'number', group: 'motion', default: 0.94, min: 0.85, max: 1, step: 0.005, unit: '×',
+    zh: '按下缩小倍率', en: 'Press scale',
+  },
+  'motion.largeScale': {
+    type: 'number', group: 'motion', default: 1.03, min: 1, max: 1.08, step: 0.002, unit: '×',
+    zh: '大面（输入卡）悬停倍率', en: 'Large surface hover scale',
+  },
+  'motion.spring': {
+    type: 'number', group: 'motion', default: 1.56, min: 1, max: 2.2, step: 0.02,
+    zh: '回弹过冲（1 = 不回弹，越大越弹）', en: 'Spring overshoot (1 = none)',
+  },
+  'motion.popDuration': {
+    type: 'number', group: 'motion', default: 260, min: 180, max: 420, step: 10, unit: 'ms',
+    zh: '弹缩时长', en: 'Pop duration',
+  },
+  'motion.popShadow': {
+    type: 'number', group: 'motion', default: 0.5, min: 0, max: 1, step: 0.05,
+    zh: '悬停投影强度（0 = 不投影）', en: 'Hover shadow strength (0 = none)',
+  },
+  'motion.textSafe': {
+    type: 'boolean', group: 'motion', default: true,
+    zh: '输入区不缩放（光标/选区保持清晰）', en: 'Never scale text fields',
   },
   'motion.panelEnter': {
     type: 'number', group: 'motion', default: 200, min: 0, max: 400, step: 10, unit: 'ms',
     zh: '面板入场时长', en: 'Panel enter duration',
   },
-  'motion.composerScale': {
-    type: 'number', group: 'motion', default: 1.04, min: 1, max: 1.2, step: 0.005, unit: '×',
-    zh: '输入卡聚焦放大（更强）', en: 'Composer focus scale',
-  },
   'motion.scopeToDialog': {
-    type: 'boolean', group: 'motion', default: true,
+    type: 'boolean', group: 'motion', default: false,
     zh: '面板打开时动画只作用于该面板', en: 'Scope animations to an open panel',
   },
   'motion.hoverTargets': {
     type: 'text', group: 'motion',
-    default: 'button:not(:disabled), [role="button"], [role="treeitem"], [role="menuitem"], [role="tab"], [role="option"], [role="switch"], [data-composer-card], [class*="_card"]:not([class*="dts-"]), [class*="_chip"], [class*="_tile"], [class*="_cell"], [class*="_navCell"], [class*="_entry"]:not([class*="dts-"]), [class*="_row"][role], [class*="_pill"]',
-    zh: '悬停动画作用元素', en: 'Hover targets',
+    default: 'button:not(:disabled), [role="button"], [role="treeitem"], [role="menuitem"], [role="tab"], [role="option"], [role="switch"], [data-composer-card], [data-composer-seat], [class*="_composerSeat"], [class*="_card"]:not([class*="dts-"]), [class*="_chip"], [class*="_tile"], [class*="_cell"], [class*="_navCell"], [class*="_entry"]:not([class*="dts-"]), [class*="_row"][role], [class*="_pill"], [class*="_bubble"], input:not([type="hidden"]), textarea, [contenteditable="true"]',
+    zh: '弹缩作用元素', en: 'Pop targets',
+  },
+  'motion.messageEnter': {
+    type: 'number', group: 'motion', default: 180, min: 0, max: 400, step: 10, unit: 'ms',
+    zh: '消息气泡入场时长（0 = 关闭）', en: 'Message enter duration (0 = off)',
+  },
+  'motion.pageEnter': {
+    type: 'number', group: 'motion', default: 240, min: 0, max: 600, step: 20, unit: 'ms',
+    zh: '页面首屏入场时长（0 = 关闭）', en: 'Page entrance duration (0 = off)',
+  },
+
+  // ── 背景粒子（星尘） ────────────────────────────────────────────────────
+  'ambient.enabled': {
+    type: 'boolean', group: 'ambient', default: true,
+    zh: '背景粒子层', en: 'Background particle field',
+  },
+  'ambient.count': {
+    type: 'number', group: 'ambient', default: 70, min: 0, max: 320, step: 10, unit: '粒',
+    zh: '粒子数量', en: 'Particle count',
+  },
+  'ambient.size': {
+    type: 'number', group: 'ambient', default: 1.5, min: 0.4, max: 5, step: 0.1, unit: 'px',
+    zh: '粒子半径', en: 'Particle radius',
+  },
+  'ambient.speed': {
+    type: 'number', group: 'ambient', default: 0.5, min: 0, max: 2, step: 0.05, unit: '×',
+    zh: '漂移速度', en: 'Drift speed',
+  },
+  'ambient.opacity': {
+    type: 'number', group: 'ambient', default: 0.5, min: 0.02, max: 1, step: 0.01,
+    zh: '粒子不透明度', en: 'Particle opacity',
+  },
+  'ambient.color': {
+    type: 'color', group: 'ambient', default: '#8ab2e2',
+    zh: '粒子颜色', en: 'Particle colour',
+  },
+  'ambient.parallax': {
+    type: 'number', group: 'ambient', default: 0.45, min: 0, max: 1.5, step: 0.05,
+    zh: '指针视差强度', en: 'Pointer parallax',
+  },
+  'ambient.repelRadius': {
+    type: 'number', group: 'ambient', default: 150, min: 0, max: 400, step: 5, unit: 'px',
+    zh: '指针推开半径', en: 'Pointer push radius',
+  },
+  'ambient.linkDistance': {
+    type: 'number', group: 'ambient', default: 0, min: 0, max: 160, step: 4, unit: 'px',
+    zh: '连线距离（0 = 关闭，≤190 粒生效）', en: 'Link distance (0 = off)',
+  },
+  'ambient.linkOpacity': {
+    type: 'number', group: 'ambient', default: 0.18, min: 0, max: 1, step: 0.02,
+    zh: '连线不透明度', en: 'Link opacity',
   },
 
   // ── 聚光灯 ──────────────────────────────────────────────────────────────
@@ -580,6 +641,7 @@ export const GROUP_ORDER = [
   { id: 'fluid', zh: '液化（流体）', en: 'Fluid' },
   { id: 'glass', zh: '毛玻璃', en: 'Frosted glass' },
   { id: 'quantum', zh: '量子化', en: 'Quantisation' },
+  { id: 'ambient', zh: '背景粒子', en: 'Ambient particles' },
   { id: 'spotlight', zh: '聚光灯', en: 'Spotlight' },
   { id: 'motion', zh: '动画', en: 'Motion' },
 ]
@@ -657,10 +719,26 @@ export const PRESETS = {
       'motion.duration': 160,
       'motion.easing': 'cubic-bezier(0.2, 0, 0, 1)',
       'motion.hoverEnabled': true,
-      'motion.hoverLift': 5,
-      'motion.hoverScale': 1.045,
-      'motion.composerScale': 1.04,
-      'motion.scopeToDialog': true,
+      'motion.hoverLift': 0,
+      'motion.hoverScale': 1.035,
+      'motion.pressScale': 0.94,
+      'motion.largeScale': 1.03,
+      'motion.spring': 1.56,
+      'motion.popDuration': 260,
+      'motion.popShadow': 0.5,
+      'motion.textSafe': true,
+      'motion.scopeToDialog': false,
+      'motion.messageEnter': 180,
+      'motion.pageEnter': 240,
+      'ambient.enabled': true,
+      'ambient.count': 70,
+      'ambient.size': 1.5,
+      'ambient.speed': 0.5,
+      'ambient.opacity': 0.5,
+      'ambient.color': '#8ab2e2',
+      'ambient.parallax': 0.45,
+      'ambient.repelRadius': 150,
+      'ambient.linkDistance': 0,
       'quantum.q3WatermarkBreath': 0.45,
       'quantum.q3WatermarkBreathPeriod': 11,
       'glass.panelTintAlpha': 0.16,
@@ -716,8 +794,24 @@ export const PRESETS = {
       'motion.duration': 160,
       'motion.easing': 'cubic-bezier(0.2, 0, 0, 1)',
       'motion.hoverEnabled': true,
-      'motion.hoverLift': 5,
-      'motion.hoverScale': 1.045,
+      'motion.hoverLift': 0,
+      'motion.hoverScale': 1.035,
+      'motion.pressScale': 0.94,
+      'motion.largeScale': 1.03,
+      'motion.spring': 1.56,
+      'motion.popDuration': 260,
+      'motion.popShadow': 0.5,
+      'motion.textSafe': true,
+      'motion.messageEnter': 180,
+      'motion.pageEnter': 240,
+      'ambient.enabled': true,
+      'ambient.count': 70,
+      'ambient.size': 1.5,
+      'ambient.speed': 0.5,
+      'ambient.opacity': 0.45,
+      'ambient.color': '#dbe9ff',
+      'ambient.parallax': 0.5,
+      'ambient.repelRadius': 160,
     },
   },
   'official-light': {
@@ -765,8 +859,24 @@ export const PRESETS = {
       'motion.duration': 160,
       'motion.easing': 'cubic-bezier(0.2, 0, 0, 1)',
       'motion.hoverEnabled': true,
-      'motion.hoverLift': 5,
-      'motion.hoverScale': 1.045,
+      'motion.hoverLift': 0,
+      'motion.hoverScale': 1.035,
+      'motion.pressScale': 0.94,
+      'motion.largeScale': 1.03,
+      'motion.spring': 1.56,
+      'motion.popDuration': 260,
+      'motion.popShadow': 0.5,
+      'motion.textSafe': true,
+      'motion.messageEnter': 180,
+      'motion.pageEnter': 240,
+      'ambient.enabled': true,
+      'ambient.count': 70,
+      'ambient.size': 1.5,
+      'ambient.speed': 0.5,
+      'ambient.opacity': 0.45,
+      'ambient.color': '#a8c8e8',
+      'ambient.parallax': 0.45,
+      'ambient.repelRadius': 150,
     },
   },
 }

@@ -19,6 +19,7 @@ import { createThemeLayer } from './theme-layer.js'
 import { createFluidLayer } from './effects/fluid.js'
 import { createGridLayer } from './effects/grid.js'
 import { createParticleLayer } from './effects/particles.js'
+import { createAmbientLayer } from './effects/ambient.js'
 import { createSpotlightLayer } from './effects/spotlight.js'
 import { createGlassLayer } from './effects/glass.js'
 import { createLayerStyles } from './effects/layers.js'
@@ -61,6 +62,7 @@ export function createPluginBody(ctx, options = {}) {
   let fluid = null
   let grid = null
   let particles = null
+  let ambient = null
   let spotlight = null
   let glass = null
   let api = null
@@ -68,6 +70,7 @@ export function createPluginBody(ctx, options = {}) {
   let resizeTimer = 0
   let domObserver = null
   let particleCanvas = null
+  let ambientCanvas = null
   let unsubscribe = null
 
   const readConfig = () => (store === null ? {} : store.values())
@@ -100,6 +103,23 @@ export function createPluginBody(ctx, options = {}) {
       doc.body.appendChild(canvas)
     }
     for (const stale of doc.querySelectorAll('.dts-grid-canvas')) if (stale !== canvas) stale.remove()
+    return canvas
+  }
+
+  /**
+   * The ambient star field shares `z-index: -1` with the whale watermark, so it
+   * has to be the EARLIER sibling: same stacking level paints in DOM order, and
+   * the dust must sit behind the mark rather than frosting it over.
+   */
+  function ensureAmbientCanvas() {
+    let canvas = doc.querySelector('.dts-ambient-canvas')
+    if (canvas === null) {
+      canvas = doc.createElement('canvas')
+      canvas.className = 'dts-ambient-canvas'
+      canvas.setAttribute('aria-hidden', 'true')
+      doc.body.insertBefore(canvas, doc.body.firstChild)
+    }
+    for (const stale of doc.querySelectorAll('.dts-ambient-canvas')) if (stale !== canvas) stale.remove()
     return canvas
   }
 
@@ -205,6 +225,26 @@ export function createPluginBody(ctx, options = {}) {
       }
     }
 
+    // Ambient star field — full viewport, behind every other decoration.
+    const wantAmbient = config['ambient.enabled'] === true && allowDecoration
+    if (wantAmbient && ambient === null) {
+      ambientCanvas = ensureAmbientCanvas()
+      ambient = createAmbientLayer({
+        canvas: ambientCanvas, readConfig, sources, reducedMotion, log,
+      })
+      ambient.setEnabled(true)
+    }
+    if (ambient !== null) {
+      if (wantAmbient) {
+        ambient.setEnabled(true)
+        ambient.refresh()
+      } else {
+        ambient.destroy()
+        ambient = null
+        ambientCanvas = null
+      }
+    }
+
     // Spotlight.
     const wantSpotlight = config['spotlight.enabled'] === true
     if (spotlight === null) {
@@ -280,6 +320,7 @@ export function createPluginBody(ctx, options = {}) {
       onPointer: () => {
         // Wake sleeping renderers on the first movement after a pause.
         grid?.refresh()
+        ambient?.wake()
       },
     })
 
@@ -314,6 +355,7 @@ export function createPluginBody(ctx, options = {}) {
         fluid: fluid?.getDiagnostics?.() ?? { enabled: false },
         grid: grid?.getDiagnostics?.() ?? { enabled: false },
         particles: particles?.getDiagnostics?.() ?? { enabled: false },
+        ambient: ambient?.getDiagnostics?.() ?? { enabled: false },
         spotlight: spotlight?.getDiagnostics?.() ?? { enabled: false },
         glass: glass?.getDiagnostics?.() ?? { enabled: false },
         interaction: interaction?.getDiagnostics?.() ?? {},
@@ -321,8 +363,8 @@ export function createPluginBody(ctx, options = {}) {
         reducedMotion,
         viewportWidth: window.innerWidth,
         decorationAllowed: wide(),
-        canvases: doc.querySelectorAll('canvas.dts-fluid-canvas, canvas.dts-grid-canvas, canvas.dts-particle-canvas, canvas.dts-logo-canvas').length,
-        layers: [...doc.querySelectorAll('.dts-background, canvas.dts-fluid-canvas, canvas.dts-grid-canvas, canvas.dts-particle-canvas, canvas.dts-logo-canvas')]
+        canvases: doc.querySelectorAll('canvas.dts-fluid-canvas, canvas.dts-grid-canvas, canvas.dts-particle-canvas, canvas.dts-ambient-canvas, canvas.dts-logo-canvas').length,
+        layers: [...doc.querySelectorAll('.dts-background, canvas.dts-fluid-canvas, canvas.dts-grid-canvas, canvas.dts-particle-canvas, canvas.dts-ambient-canvas, canvas.dts-logo-canvas')]
           .map((el) => ({ cls: el.className, position: getComputedStyle(el).position, zIndex: getComputedStyle(el).zIndex })),
         styleTags: doc.querySelectorAll('style[data-plugin="dsh-deepseek-theme-studio"]').length,
         observers: (domObserver === null ? 0 : 1),
@@ -363,6 +405,7 @@ export function createPluginBody(ctx, options = {}) {
           id: ROW_ID,
           order: ROW_ORDER,
         }, createSettingsRow(React, {
+          version,
           getSnapshot: () => store.snapshot(),
           subscribe: (fn) => store.subscribe(fn),
           set: (key, value) => store.set(key, value),
@@ -406,6 +449,9 @@ export function createPluginBody(ctx, options = {}) {
     fluid?.destroy()
     grid?.destroy()
     particles?.destroy()
+    ambient?.destroy()
+    ambient = null
+    ambientCanvas = null
     spotlight?.destroy()
     glass?.destroy()
     interaction?.destroy()
@@ -417,7 +463,7 @@ export function createPluginBody(ctx, options = {}) {
       particleCanvas.remove()
       particleCanvas = null
     }
-    for (const stale of doc.querySelectorAll('canvas.dts-fluid-canvas, canvas.dts-grid-canvas, canvas.dts-particle-canvas, .dts-background')) {
+    for (const stale of doc.querySelectorAll('canvas.dts-fluid-canvas, canvas.dts-grid-canvas, canvas.dts-particle-canvas, canvas.dts-ambient-canvas, .dts-background')) {
       stale.remove()
     }
     for (const style of doc.querySelectorAll('style[data-plugin="dsh-deepseek-theme-studio"]')) style.remove()
