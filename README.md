@@ -3,10 +3,12 @@
 DeepSeek 官网视觉语言的 **DSH Web 客户端主题插件**：毛玻璃 / 液化（流体）/ 量子化（Q1–Q4）三类效果，
 加上 0.2.0 起的**背景粒子层**与**光标 / 按键互动动画**，全部参数可调、可持久化、可程序化调用。
 
-- 当前版本：**0.3.0**（0.3.0 删除了跟随光标的光环/涟漪，改为元素自身的 iOS 式弹缩，见 §0）
-- 宿主实测版本：**0.2.3-alpha.2**（同时兼容 **0.2.1-rc.2** / **0.2.0-rc.2**；`dsh.compatibility.dshReleases` 三个版本都已声明）
+- 当前版本：**0.3.1**（0.3.0 删除了跟随光标的光环/涟漪，改为元素自身的 iOS 式弹缩，见 §0）
+- 宿主要求：**`>= 0.2.3`**（实测 0.2.3-alpha.2）。0.3.1 起不再声明 0.2.2 及以下：参数文件的 HTTP 路由
+  从 0.2.3 起由宿主统一鉴权，更早的宿主没有这套机制（`ctx.connection.requestRejection` 已在 0.2.2-rc.2
+  被移除），只能靠插件自己的 loopback/同源围栏，因此不再作为支持范围。
 - 目标 profile：**desktop** / **web** 均可（`$env:USERPROFILE\.dsh\profiles\<profile>`）
-- 出厂默认是**蓝白官网主题**（流体背景 + 粒子星尘 + 毛玻璃 + 鲸鱼水印 + 光标光环）；点预设里的 **「原生」** 立即回到
+- 出厂默认是**蓝白官网主题**（流体背景 + 粒子星尘 + 毛玻璃 + 鲸鱼水印）；点预设里的 **「原生」** 立即回到
   DSH 原生外观，关闭全部效果后不写任何令牌、不挂任何 canvas、不留任何 DOM 节点。
 - 复用与许可台账见 [`REUSE.md`](REUSE.md)，第三方许可见 [`LICENSES/`](LICENSES/NOTICE.md)。
 
@@ -220,11 +222,16 @@ window.dshThemeStudio.formatSelfCheck()
 ```
 
 - 文件名/路径：`$DSH_HOME/theme-studio.json`（默认 `$env:USERPROFILE\.dsh\theme-studio.json`），原子写（tmp+rename）。
-- HTTP 接口（前缀路由，带 loopback + 同源信任围栏）：
+- HTTP 接口（前缀路由）：
   - `GET  /deepseek-theme-studio/api` → `{ ok, value, fileError, revision, path }`
   - `POST /deepseek-theme-studio/api` `{ "method": "get" }`
   - `POST /deepseek-theme-studio/api` `{ "method": "set", "patch": { "glass.blur": 30 } }`（浅合并，`null` 删键）
   - `POST /deepseek-theme-studio/api` `{ "method": "replace", "value": { ... } }`
+- **鉴权**：0.2.3 起这条路由由宿主统一鉴权（未配对/无 token 的请求在到达插件前就返回 401）。
+  插件自身仍保留 `isTrustedApiRequest()` 作为纵深防御：Host 必须是 loopback（或 `webRuntime.trustedHosts`
+  中的授权来源）、`sec-fetch-site` 不得为 `cross-site`、`Origin` 必须同源，否则 403；POST 还要求
+  `content-type: application/json`。这也是 0.3.1 把 `engines.dsh` 收到 `>= 0.2.3` 的原因：更早的宿主
+  没有这层宿主鉴权。
 - 客户端每 **3 秒**（页面可见时）检查一次 revision，文件被手工改动即热加载；`fileError` 会在设置行显示，
   **不会**被当成空配置静默吞掉。
 - 文件必须是 **UTF-8 无 BOM** 的 JSON 对象；带 BOM 会被容忍，语法错误会被报告。

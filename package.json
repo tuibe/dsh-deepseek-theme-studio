@@ -1,6 +1,6 @@
 {
   "name": "dsh-deepseek-theme-studio",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "DeepSeek 官网视觉语言的 DSH Web 主题工作台：毛玻璃 / 液化(流体) / 量子化(Q1-Q4) / 背景粒子星尘 / iOS 风格元素弹缩，全部参数可调、可持久化、可程序化调用。",
   "type": "module",
   "license": "MIT",
@@ -39,10 +39,8 @@
     },
     "manifestVersion": 1,
     "compatibility": {
-      "dsh": ">=0.2.0-rc.2 <0.3.0-0",
+      "dsh": ">=0.2.3-0 <0.3.0-0",
       "dshReleases": {
-        "0.2.0-rc.2": "compatible",
-        "0.2.1-rc.2": "compatible",
         "0.2.3-alpha.2": "compatible"
       }
     }
@@ -61,7 +59,7 @@
   },
   "engines": {
     "node": ">=18",
-    "dsh": ">=0.2.0-rc.2 <0.3.0-0"
+    "dsh": ">=0.2.3-0 <0.3.0-0"
   },
   "repository": {
     "type": "git",
