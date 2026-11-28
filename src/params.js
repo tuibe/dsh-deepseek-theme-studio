@@ -470,7 +470,7 @@ export const PARAM_DEFS = {
   },
   'motion.hoverTargets': {
     type: 'text', group: 'motion',
-    default: 'button:not(:disabled), [role="button"], [role="treeitem"], [role="menuitem"], [role="tab"], [role="option"], [role="switch"], [data-composer-card], [data-composer-seat], [class*="_composerSeat"], [class*="_card"]:not([class*="dts-"]), [class*="_chip"], [class*="_tile"], [class*="_cell"], [class*="_navCell"], [class*="_entry"]:not([class*="dts-"]), [class*="_row"][role], [class*="_pill"], [class*="_bubble"], input:not([type="hidden"]), textarea, [contenteditable="true"]',
+    default: 'button:not(:disabled), [role="button"], [role="treeitem"], [role="menuitem"], [role="tab"], [role="option"], [role="switch"], [data-composer-card], [data-composer-seat], [class*="_composerSeat"], [class*="_card"]:not([class*="dts-"]), [class*="_chip"], [class*="_tile"], [class*="_cell"], [class*="_navCell"], [class*="_entry"]:not([class*="dts-"]), [class*="_row"][role], [class*="_pill"], input:not([type="hidden"]), textarea, [contenteditable="true"]',
     zh: '弹缩作用元素', en: 'Pop targets',
   },
   'motion.messageEnter': {

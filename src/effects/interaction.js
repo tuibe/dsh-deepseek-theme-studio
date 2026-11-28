@@ -26,11 +26,14 @@
  *   type. That is a legibility decision, not a safety one.
  *
  * Layering rules:
- *   - only the OUTERMOST matching element animates; nested matches are dropped so
- *     a `<span>` inside a `<button>` cannot double the scale factor;
- *   - large surfaces (the composer card, dialogs) get a much smaller factor and
- *     stop scaling entirely while focused (`:focus-within`), so typing never
- *     shifts the text under the caret.
+ *   - two matches of the same kind never nest: the outer one animates, the inner
+ *     one is dropped so a `<span>` inside a `<button>` cannot double the factor;
+ *   - output blocks (code blocks, message bubbles, anything in the transcript
+ *     that is not a control) never move at all — a scaling code block carries its
+ *     copy button away from the pointer that is trying to click it;
+ *   - large surfaces (the composer card) get a much smaller factor and stop
+ *     scaling entirely while focused (`:focus-within`), so typing never shifts
+ *     the text under the caret.
  *
  * PROVENANCE: the spring model is CSS-only (a back-out cubic-bezier). No
  * upstream implementation was used; see REUSE.md §0.4.3.
@@ -155,10 +158,50 @@ const LARGE_SELECTOR = [
   '[data-composer-card]',
   '[data-composer-seat]',
   '[class*="_composerSeat"]',
-  // Message bubbles carry body text: 1.02 is the largest factor that still
-  // reads crisp, and it is visible enough to feel like the bubble answered.
-  '[class*="_bubble"]',
 ].join(', ')
+
+/**
+ * Content blocks never move at all.
+ *
+ * A code block is a copy target: the copy button lives in its corner, so a
+ * hover scale moves the button while the pointer is travelling towards it. The
+ * pointer crosses the (moving) edge, the scale reverses, the button moves back —
+ * that is the shake the user reported, and it makes the copy button hard to hit.
+ * Read-only output has no interaction reward to give, so it gets none: no
+ * transform, no shadow, no class. Only real controls animate.
+ *
+ * Anything inside the transcript that is not a control counts as output, which
+ * covers tool-call cards and anything else the host renders there without a
+ * class name we can predict.
+ */
+const CONTENT_SELECTOR = [
+  'pre',
+  'code',
+  '[class*="_codeBlock"]',
+  '[class*="_codeblock"]',
+  '[class*="_bubble"]',
+  '[class*="_markdown"]',
+  '[class*="_prose"]',
+].join(', ')
+
+/** Real controls: these are the only things that animate. */
+const INTERACTIVE_SELECTOR = [
+  'button',
+  'a[href]',
+  'summary',
+  'label',
+  '[role="button"]',
+  '[role="switch"]',
+  '[role="checkbox"]',
+  '[role="radio"]',
+  '[role="tab"]',
+  '[role="menuitem"]',
+  '[role="option"]',
+  '[role="treeitem"]',
+].join(', ')
+
+/** The transcript: everything in here that is not a control is output. */
+const TRANSCRIPT_SELECTOR = '[data-conversation-scroll]'
 
 /**
  * Text entry keeps `transform: none`: a scaled text box rasterises its own caret
@@ -199,6 +242,7 @@ export function createInteractionLayer(options) {
   let popCount = 0
   let largeCount = 0
   let textSafeCount = 0
+  let staticCount = 0
   /** Bubbles already considered. The first pass primes it without animating. */
   const seenBubbles = new WeakSet()
   let bubblesPrimed = false
@@ -238,29 +282,11 @@ export function createInteractionLayer(options) {
   }
 
   /**
-   * Keep only the outermost match: a `<span>` inside a `<button>` that both match
-   * would otherwise multiply the scale factor (1.035² ≈ 1.07) and the inner one
-   * would animate independently of its parent.
+   * Nesting is resolved inside mark(), by kind: two matches on the same kind
+   * would multiply the scale factor (1.035² ≈ 1.07). It cannot be a separate
+   * pre-pass over the raw match list, because a frozen output block must not
+   * count as a parent that swallows the controls inside it.
    */
-  function outermost(elements) {
-    const kept = []
-    const keptSet = new Set()
-    for (const el of elements) {
-      let nested = false
-      let parent = el.parentElement
-      while (parent !== null) {
-        if (keptSet.has(parent)) {
-          nested = true
-          break
-        }
-        parent = parent.parentElement
-      }
-      if (nested) continue
-      kept.push(el)
-      keptSet.add(el)
-    }
-    return kept
-  }
 
   /** Mark the current pop targets (idempotent; re-runs on DOM changes). */
   function mark() {
@@ -290,29 +316,80 @@ export function createInteractionLayer(options) {
     found = found
       .filter((el) => !matchesAny(el, NEVER_TARGETS))
       .slice(0, MAX_TARGETS)
-    found = outermost(found)
+
+    /**
+     * Classify FIRST, then resolve nesting.
+     *
+     * Nesting has to be resolved by kind rather than by "is an ancestor already
+     * kept": a code block is classified as output and gets no class, so treating
+     * it as a kept ancestor would swallow the copy button inside it and the one
+     * control a user aims at there would answer with nothing. Frozen output also
+     * must not shadow a control, so `static` never counts as a nested parent.
+     */
+    const textSafe = config['motion.textSafe'] !== false
+    const kindOf = new Map()
+    for (const el of found) {
+      const interactive = matchesAny(el, [INTERACTIVE_SELECTOR])
+      if (!interactive) {
+        const isOutput = matchesAny(el, [CONTENT_SELECTOR])
+          || el.querySelector('pre') !== null
+          || el.closest(TRANSCRIPT_SELECTOR) !== null
+        if (isOutput) {
+          kindOf.set(el, 'static')
+          continue
+        }
+      }
+      if (textSafe && matchesAny(el, [TEXT_SAFE_SELECTOR])) kindOf.set(el, 'textsafe')
+      else if (matchesAny(el, [LARGE_SELECTOR])) kindOf.set(el, 'lg')
+      else kindOf.set(el, 'pop')
+    }
+
+    const kept = []
+    for (const el of found) {
+      const kind = kindOf.get(el)
+      if (kind === 'static') {
+        kept.push(el)
+        continue
+      }
+      let nested = false
+      let parent = el.parentElement
+      while (parent !== null) {
+        if (kindOf.get(parent) === kind) {
+          nested = true
+          break
+        }
+        parent = parent.parentElement
+      }
+      if (!nested) kept.push(el)
+    }
 
     // Drop marks that no longer match (elements removed or re-rendered).
-    const foundSet = new Set(found)
+    const foundSet = new Set(kept)
     for (const el of marked) {
       if (!foundSet.has(el) || !el.isConnected) clearClasses(el)
     }
 
-    const textSafe = config['motion.textSafe'] !== false
     popCount = 0
     largeCount = 0
     textSafeCount = 0
-    for (const el of found) {
+    staticCount = 0
+    for (const el of kept) {
       clearClasses(el)
-      if (textSafe && matchesAny(el, [TEXT_SAFE_SELECTOR])) {
-        el.classList.add('dts-textsafe')
-        textSafeCount += 1
-      } else if (matchesAny(el, [LARGE_SELECTOR])) {
-        el.classList.add('dts-pop-lg')
-        largeCount += 1
-      } else {
-        el.classList.add('dts-pop')
-        popCount += 1
+      switch (kindOf.get(el)) {
+        case 'static':
+          staticCount += 1
+          break
+        case 'textsafe':
+          el.classList.add('dts-textsafe')
+          textSafeCount += 1
+          break
+        case 'lg':
+          el.classList.add('dts-pop-lg')
+          largeCount += 1
+          break
+        default:
+          el.classList.add('dts-pop')
+          popCount += 1
       }
     }
 
@@ -327,11 +404,11 @@ export function createInteractionLayer(options) {
     if (composer !== null && composer.isConnected && !foundSet.has(composer)) {
       clearClasses(composer)
       composer.classList.add('dts-pop-lg')
-      found.push(composer)
+      kept.push(composer)
       largeCount += 1
     }
 
-    marked = found
+    marked = kept
   }
 
   function scheduleMark() {
@@ -454,6 +531,7 @@ export function createInteractionLayer(options) {
         popTargets: popCount,
         largeTargets: largeCount,
         textSafeTargets: textSafeCount,
+        outputTargets: staticCount,
         scope: doc.querySelector('[role="dialog"]') !== null && config['motion.scopeToDialog'] === true ? 'dialog' : 'page',
         panels: doc.querySelectorAll('.dts-panel-enter').length,
         bubblesAnimating: doc.querySelectorAll('.dts-bubble-in').length,

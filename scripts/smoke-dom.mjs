@@ -372,6 +372,20 @@ const probeCard = new FakeElement('div')
 probeCard.setAttribute('data-composer-card', '')
 body.appendChild(probeCard)
 
+// Read-only output: a code-block card inside the transcript must stay perfectly
+// still (its copy button cannot move away from the pointer), while the copy
+// button itself still answers.
+const transcript = new FakeElement('div')
+transcript.setAttribute('data-conversation-scroll', '')
+body.appendChild(transcript)
+const outputCard = new FakeElement('div')
+outputCard.className = '_card'
+transcript.appendChild(outputCard)
+const snippet = new FakeElement('pre')
+outputCard.appendChild(snippet)
+const copyButton = new FakeElement('button')
+outputCard.appendChild(copyButton)
+
 const errors = []
 const originalError = console.error
 console.error = (...args) => { errors.push(args.join(' ')); originalError(...args) }
@@ -410,6 +424,12 @@ if (body.querySelector('.dts-ambient-canvas') === null) problems.push('ambient c
 if (!probeButton.classList.contains('dts-pop')) problems.push('button was not classified as a pop target')
 if (!probeCard.classList.contains('dts-pop-lg')) problems.push('composer card was not classified as a large surface')
 if (!probeField.classList.contains('dts-textsafe')) problems.push('textarea was not classified as text-safe')
+if (outputCard.classList.contains('dts-pop') || outputCard.classList.contains('dts-pop-lg')) {
+  problems.push('a code block inside the transcript must not animate')
+}
+if (!copyButton.classList.contains('dts-pop')) {
+  problems.push('the copy button inside a frozen code block lost its feedback')
+}
 // The cursor halo was removed in 0.3.0; it must not come back through a stale module.
 if (body.querySelector('.dts-cursor-halo') !== null) problems.push('cursor halo should not exist any more')
 if (body.querySelector('.dts-cursor-ripple') !== null) problems.push('cursor ripple should not exist any more')
